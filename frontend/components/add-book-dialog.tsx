@@ -1,0 +1,69 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { BookPicker } from '@/components/book-picker'
+import { FilterChips } from '@/components/filter-chips'
+import { useLibrary } from '@/components/library-provider'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { shelfStatusLabels, type Book, type ShelfStatus } from '@/lib/data'
+
+export const shelfStatusOptions = (Object.keys(shelfStatusLabels) as ShelfStatus[]).map((value) => ({
+  value,
+  label: shelfStatusLabels[value],
+}))
+
+export function AddBookDialog({
+  open,
+  onOpenChange,
+  onAdded,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onAdded: () => void
+}) {
+  const { addToShelf } = useLibrary()
+  const [book, setBook] = useState<Book | null>(null)
+  const [status, setStatus] = useState<ShelfStatus>('want')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setBook(null)
+      setStatus('want')
+    }
+  }, [open])
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    if (!book || busy) return
+    setBusy(true)
+    try {
+      await addToShelf(book, status)
+      onOpenChange(false)
+      onAdded()
+    } catch {
+      // The provider shows the error.
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto rounded-2xl p-5 sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-serif text-xl">Add to your shelf</DialogTitle>
+          <DialogDescription>Books you own, are reading, or want to read.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="flex min-w-0 flex-col gap-4">
+          <BookPicker id="shelf-book" value={book} onChange={setBook} />
+          <FilterChips label="Shelf" value={status} onChange={setStatus} options={shelfStatusOptions} />
+          <Button type="submit" className="h-12 rounded-full text-base" disabled={!book || busy}>
+            {busy ? 'Adding…' : 'Add to shelf'}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}

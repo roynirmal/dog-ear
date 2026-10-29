@@ -1,0 +1,13 @@
+backend/pb_data/
+backend/pb_public/
+backend/dogear
+backend/coverage.out
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/next-env.d.ts
+frontend/*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.DS_Store
