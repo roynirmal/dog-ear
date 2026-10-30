@@ -35,7 +35,11 @@ export type Post = {
   createdAt: string
   likedBy: string[]
   comments: Comment[]
+  /** The author's shelf copy behind this post. */
+  shelfBookId?: string
+  /** Live: the author's copy is lendable and not on loan right now. */
   canLend: boolean
+  lentOut: boolean
   requested: boolean
 }
 
@@ -48,6 +52,8 @@ export type Loan = {
   friendId?: string
   contact?: string
   book: Book
+  /** The lender's shelf copy, when the loan is linked to one. */
+  shelfBookId?: string
   since: string
   /** Calendar date, YYYY-MM-DD. */
   dueDate?: string
@@ -59,7 +65,7 @@ export type Loan = {
 
 export type BorrowRequest = {
   id: string
-  postId: string
+  bookId: string
   book: Book
   requesterId: string
   createdAt: string
@@ -68,7 +74,34 @@ export type BorrowRequest = {
 export type ShelfBook = Book & {
   id: string
   status: ShelfStatus
+  /** Friends may ask to borrow it (unless it is lent out). */
+  lendable: boolean
   addedAt: string
+}
+
+/** A lendable book on a friend's shelf. */
+export type FriendBook = Book & {
+  id: string
+  ownerId: string
+  status: ShelfStatus
+  available: boolean
+  requested: boolean
+}
+
+export type FriendRequest = {
+  id: string
+  fromId: string
+  createdAt: string
+}
+
+/** A friend started reading a book (sent once per friend per book). */
+export type Notification = {
+  id: string
+  actorId: string
+  postId: string
+  book: Book
+  createdAt: string
+  read: boolean
 }
 
 export type Note = {
@@ -85,11 +118,16 @@ export type LibraryState = {
   code: string
   people: Person[]
   friends: string[]
+  friendRequests: FriendRequest[]
+  /** People you asked to be friends who have not accepted. */
+  sentRequests: string[]
   posts: Post[]
   loans: Loan[]
   requests: BorrowRequest[]
   shelf: ShelfBook[]
+  library: FriendBook[]
   notes: Note[]
+  notifications: Notification[]
 }
 
 export const shelfStatusLabels: Record<ShelfStatus, string> = {

@@ -5,6 +5,7 @@ import { BookMarked, Check, Heart, MessageCircle, Send, Star, Trash2 } from 'luc
 import { BookCover } from '@/components/book-cover'
 import { FriendAvatar } from '@/components/friend-avatar'
 import { useLibrary } from '@/components/library-provider'
+import { PersonButton } from '@/components/person-card'
 import { Button } from '@/components/ui/button'
 import { relativeTime, type Post } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -34,12 +35,17 @@ export function PostCard({ post }: { post: Post }) {
   }
 
   return (
-    <article className="rounded-2xl border bg-card p-4">
+    <article id={`post-${post.id}`} className="scroll-mt-28 rounded-2xl border bg-card p-4">
       <header className="flex items-center gap-3">
-        <FriendAvatar friendId={post.authorId} />
+        <PersonButton personId={post.authorId} className="shrink-0 rounded-full">
+          <FriendAvatar friendId={post.authorId} />
+          <span className="sr-only">View {author.name}</span>
+        </PersonButton>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm">
-            <span className="font-semibold">{isMine ? 'You' : author.name}</span>{' '}
+            <PersonButton personId={post.authorId} className="inline font-semibold">
+              {isMine ? 'You' : author.name}
+            </PersonButton>{' '}
             <span className="text-muted-foreground">
               {post.status === 'reading' ? (isMine ? 'are reading' : 'is reading') : 'finished'}
             </span>
@@ -109,16 +115,20 @@ export function PostCard({ post }: { post: Post }) {
           <span className="tabular-nums">{post.comments.length}</span>
           <span className="sr-only">comments</span>
         </Button>
-        {post.canLend && !isMine ? (
+        {post.canLend && post.shelfBookId && !isMine ? (
           <Button
             variant={post.requested ? 'secondary' : 'outline'}
             className="ml-auto h-11 gap-1.5 rounded-full px-4"
             disabled={post.requested}
-            onClick={() => requestBorrow(post.id).catch(() => undefined)}
+            onClick={() => requestBorrow(post.shelfBookId!).catch(() => undefined)}
           >
             {post.requested ? <Check className="size-4" /> : <BookMarked className="size-4" />}
             {post.requested ? 'Requested' : 'Ask to borrow'}
           </Button>
+        ) : post.lentOut && !isMine ? (
+          <span className="ml-auto rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+            Lent out
+          </span>
         ) : null}
         {isMine ? (
           <Button
@@ -138,9 +148,14 @@ export function PostCard({ post }: { post: Post }) {
         <div className="mt-2 flex flex-col gap-3">
           {post.comments.map((comment) => (
             <div key={comment.id} className="flex gap-2.5">
-              <FriendAvatar friendId={comment.authorId} size="sm" />
+              <PersonButton personId={comment.authorId} className="h-fit shrink-0 rounded-full">
+                <FriendAvatar friendId={comment.authorId} size="sm" />
+                <span className="sr-only">View {person(comment.authorId).name}</span>
+              </PersonButton>
               <div className="min-w-0 flex-1 rounded-2xl rounded-tl-sm bg-muted px-3 py-2">
-                <p className="text-xs font-semibold">{person(comment.authorId).name}</p>
+                <PersonButton personId={comment.authorId} className="text-xs font-semibold">
+                  {person(comment.authorId).name}
+                </PersonButton>
                 <p className="text-sm leading-relaxed">{comment.text}</p>
               </div>
             </div>

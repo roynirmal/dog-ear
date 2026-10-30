@@ -41,7 +41,7 @@ export function SignIn({ hasInvite }: { hasInvite: boolean }) {
         <h1 className="font-serif text-4xl leading-tight font-semibold text-balance">Read together, lend freely.</h1>
         {hasInvite ? (
           <p className="rounded-2xl bg-primary/10 px-4 py-3 text-sm text-primary">
-            A friend invited you to their reading circle. Sign in to join them.
+            A friend invited you to Dog-ear. Sign in to become friends.
           </p>
         ) : null}
       </div>

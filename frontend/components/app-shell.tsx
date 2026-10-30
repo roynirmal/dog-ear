@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowLeftRight, BookOpen, BookPlus, NotebookPen, PenLine, Plus, User, Users } from 'lucide-react'
 import { AddBookDialog } from '@/components/add-book-dialog'
-import { CircleView } from '@/components/circle-view'
 import { FeedView } from '@/components/feed-view'
+import { FriendsView } from '@/components/friends-view'
 import { LibraryProvider, useLibrary } from '@/components/library-provider'
 import { LoanDialog } from '@/components/loan-dialog'
 import { LoansView } from '@/components/loans-view'
 import { NoteDialog } from '@/components/note-dialog'
+import { NotificationsButton } from '@/components/notifications'
+import { PersonCardProvider } from '@/components/person-card'
 import { ProfileView } from '@/components/profile-view'
 import { ShareDialog } from '@/components/share-dialog'
 import { SignIn } from '@/components/sign-in'
@@ -18,12 +20,12 @@ import { api, pb } from '@/lib/api'
 import { isOverdue, type Book, type LibraryState, type Note } from '@/lib/data'
 import { cn } from '@/lib/utils'
 
-type Tab = 'feed' | 'loans' | 'circle' | 'you'
+type Tab = 'feed' | 'loans' | 'friends' | 'you'
 
 const tabMeta: Record<Tab, { label: string; title: string; icon: typeof BookOpen }> = {
   feed: { label: 'Feed', title: 'What friends are reading', icon: BookOpen },
   loans: { label: 'Loans', title: 'Lent & borrowed', icon: ArrowLeftRight },
-  circle: { label: 'Circle', title: 'Your reading circle', icon: Users },
+  friends: { label: 'Friends', title: 'Your friends', icon: Users },
   you: { label: 'You', title: 'Your shelf', icon: User },
 }
 
@@ -119,7 +121,9 @@ export function AppShell() {
   else
     content = (
       <LibraryProvider initial={initial} onError={showError}>
-        <Shell />
+        <PersonCardProvider>
+          <Shell />
+        </PersonCardProvider>
       </LibraryProvider>
     )
 
@@ -145,7 +149,7 @@ export function AppShell() {
 }
 
 function Shell() {
-  const { loans, requests } = useLibrary()
+  const { loans, requests, friendRequests } = useLibrary()
   const [tab, setTab] = useState<Tab>('feed')
   const [chooserOpen, setChooserOpen] = useState(false)
   const [share, setShare] = useState<{ open: boolean; book?: Book }>({ open: false })
@@ -153,15 +157,28 @@ function Shell() {
   const [addBookOpen, setAddBookOpen] = useState(false)
   const [note, setNote] = useState<{ open: boolean; note?: Note; bookId?: string }>({ open: false })
 
-  const loanBadge = loans.filter(isOverdue).length + requests.length
+  const badges: Partial<Record<Tab, number>> = {
+    loans: loans.filter(isOverdue).length + requests.length,
+    friends: friendRequests.length,
+  }
 
   function goTo(next: Tab) {
     setTab(next)
     window.scrollTo({ top: 0 })
   }
 
+  function openPost(postId: string) {
+    setTab('feed')
+    // Wait for the feed to render before scrolling to the post.
+    window.setTimeout(() => {
+      const post = document.getElementById(`post-${postId}`)
+      if (post) post.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      else window.scrollTo({ top: 0 })
+    }, 50)
+  }
+
   const leftTabs: Tab[] = ['feed', 'loans']
-  const rightTabs: Tab[] = ['circle', 'you']
+  const rightTabs: Tab[] = ['friends', 'you']
 
   function renderTab(id: Tab) {
     const { label, icon: Icon } = tabMeta[id]
@@ -179,9 +196,9 @@ function Shell() {
       >
         <span className="relative">
           <Icon aria-hidden="true" className={cn('size-6', active && 'stroke-[2.25]')} />
-          {id === 'loans' && loanBadge > 0 ? (
+          {badges[id] ? (
             <span className="absolute -top-1 -right-2 flex size-4 items-center justify-center rounded-full bg-destructive text-[0.6rem] font-bold text-white">
-              {loanBadge}
+              {badges[id]}
               <span className="sr-only"> need attention</span>
             </span>
           ) : null}
@@ -221,14 +238,19 @@ function Shell() {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
       <header className="sticky top-0 z-30 border-b bg-background/90 px-4 pt-[max(env(safe-area-inset-top),0.75rem)] pb-3 backdrop-blur">
-        <p className="font-serif text-sm font-semibold tracking-tight text-primary italic">Dog-ear</p>
-        <h1 className="font-serif text-2xl leading-tight font-semibold text-balance">{tabMeta[tab].title}</h1>
+        <div className="flex items-end justify-between gap-3">
+          <div className="min-w-0">
+            <p className="font-serif text-sm font-semibold tracking-tight text-primary italic">Dog-ear</p>
+            <h1 className="font-serif text-2xl leading-tight font-semibold text-balance">{tabMeta[tab].title}</h1>
+          </div>
+          <NotificationsButton onOpenPost={openPost} />
+        </div>
       </header>
 
       <main className="flex-1 pt-5 pb-32">
-        {tab === 'feed' ? <FeedView onShare={() => setShare({ open: true })} onInvite={() => goTo('circle')} /> : null}
+        {tab === 'feed' ? <FeedView onShare={() => setShare({ open: true })} onInvite={() => goTo('friends')} /> : null}
         {tab === 'loans' ? <LoansView onLogLoan={() => setLoan({ open: true })} /> : null}
-        {tab === 'circle' ? <CircleView /> : null}
+        {tab === 'friends' ? <FriendsView /> : null}
         {tab === 'you' ? (
           <ProfileView
             onShare={(book) => setShare({ open: true, book })}

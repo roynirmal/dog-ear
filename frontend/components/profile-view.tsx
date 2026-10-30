@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowLeftRight, BookPlus, LogOut, NotebookPen, PenLine, Trash2 } from 'lucide-react'
+import { ArrowLeftRight, BookPlus, HandHeart, Lock, LogOut, NotebookPen, PenLine, Trash2 } from 'lucide-react'
 import { shelfStatusOptions } from '@/components/add-book-dialog'
 import { BookCover } from '@/components/book-cover'
 import { FilterChips } from '@/components/filter-chips'
@@ -10,6 +10,7 @@ import { useLibrary } from '@/components/library-provider'
 import { PostCard } from '@/components/post-card'
 import { Button } from '@/components/ui/button'
 import { signOut } from '@/lib/api'
+import { cn } from '@/lib/utils'
 import { firstName, relativeTime, type Book, type Note, type ShelfBook, type ShelfStatus } from '@/lib/data'
 
 type Section = 'shelf' | 'notes' | 'thoughts'
@@ -104,7 +105,7 @@ function ShelfSection({
   onAddBook: () => void
   onNote: (options: { bookId?: string }) => void
 }) {
-  const { shelf, loans, notes, person, setShelfStatus, removeFromShelf } = useLibrary()
+  const { shelf, loans, notes, person, setShelfStatus, setLendable, removeFromShelf } = useLibrary()
   const [filter, setFilter] = useState<ShelfStatus | 'all'>('all')
   const visible = filter === 'all' ? shelf : shelf.filter((book) => book.status === filter)
 
@@ -113,7 +114,11 @@ function ShelfSection({
       (l) =>
         l.direction === 'lent' &&
         !l.returnedAt &&
-        (book.olKey ? l.book.olKey === book.olKey : l.book.title.toLowerCase() === book.title.toLowerCase()),
+        (l.shelfBookId
+          ? l.shelfBookId === book.id
+          : book.olKey
+            ? l.book.olKey === book.olKey
+            : l.book.title.toLowerCase() === book.title.toLowerCase()),
     )
     if (!loan) return null
     return loan.friendId ? firstName(person(loan.friendId).name) : (loan.contact ?? 'someone')
@@ -165,8 +170,23 @@ function ShelfSection({
                     </option>
                   ))}
                 </select>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={book.lendable}
+                  onClick={() => setLendable(book.id, !book.lendable).catch(() => undefined)}
+                  className={cn(
+                    'inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50',
+                    book.lendable
+                      ? 'border-primary/30 bg-primary/10 text-primary'
+                      : 'bg-background text-muted-foreground',
+                  )}
+                >
+                  {book.lendable ? <HandHeart className="size-4" /> : <Lock className="size-4" />}
+                  {book.lendable ? 'Friends can borrow' : 'Not for lending'}
+                </button>
                 {holder ? (
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                  <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent-foreground">
                     With {holder}
                   </span>
                 ) : null}

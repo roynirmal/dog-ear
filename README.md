@@ -2,11 +2,15 @@
 
 Share what you're reading with friends, and keep track of the books you lend and borrow.
 
-- Add and manage your book collection (want to read / reading / finished)
+- Add and manage your book collection (want to read / reading / finished), and
+  choose which books friends may borrow
 - Online book search, powered by [Open Library](https://openlibrary.org)
 - Private notes, grouped with tags and optionally linked to a book
 - A record of who you lend books to and borrow from, with due dates, nudges and history
-- See what friends are reading and their thoughts; heart, comment and ask to borrow
+- See what friends are reading and their thoughts; heart, comment, and borrow from
+  their lending shelf
+- Add friends by invite link or by tapping someone in the comments
+- One in-app notification when a friend starts reading a book
 
 Built with Next.js (static export) and PocketBase extended in Go, the same backend
 stack as payback.
@@ -66,8 +70,9 @@ TypeScript check, unit tests and the static export build. CI runs the same check
 ## Code organisation
 
 ```text
-backend/schema.go        Migration: locked collections and users hardening
+backend/schema*.go       Migrations: locked collections and users hardening
 backend/service.go       Every domain action, authorized inside one transaction
+backend/state.go         The per-user state every action returns
 backend/openlibrary.go   Cached Open Library search proxy
 backend/main.go          HTTP routes, Google-only OAuth hook, static frontend
 frontend/app/            Next.js entry, layout, manifest

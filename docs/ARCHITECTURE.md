@@ -16,29 +16,50 @@ plain base collections with **no API rules** (superuser-only); clients cannot re
 or write them through `/api/collections/...`.
 
 ```text
-friendships  a, b (user IDs, a < b, unique pair)       mutual, created by invite code
-books        owner, title, author, olKey, coverId, year, status (want|reading|finished)
+friendships  a, b (user IDs, a < b, unique pair)       mutual; invite code or accepted request
+friend_requests  from, to, status (pending|declined), unique pair
+books        owner, title, author, olKey, coverId, year, status (want|reading|finished),
+             lendable
 notes        owner, book (own shelf book ID or ""), text, tags[]
 posts        owner, book{title, author, olKey, coverId, year}, status (reading|finished),
-             progress 0-100, rating 1-5, thoughts, canLend
+             progress 0-100, rating 1-5, thoughts, canLend, shelfBook
 likes        post, user (unique pair)
 comments     post, user, text
-requests     post, owner, requester, status (pending|accepted|declined)
+requests     book (owner's shelf book), owner, requester, status (pending|accepted|declined)
 loans        lender, borrower (user IDs; one may be ""), contact (name of a person
-             outside the app), book{...}, createdBy, since, due (YYYY-MM-DD),
-             returned, nudged
+             outside the app), book{...}, shelfBook (lender's copy, if linked),
+             createdBy, since, due (YYYY-MM-DD), returned, nudged
+notifications  user, actor, post, bookKey, read; unique (user, actor, bookKey)
 ```
 
-Posts and loans copy the book details instead of referencing a shelf row, so
+Posts and loans copy the book details instead of relying on a shelf row, so
 removing a book from your shelf never rewrites history.
+
+### Lending from the shelf
+
+Every book you post about goes on your shelf. Each shelf book has a `lendable`
+switch (new books default to lendable unless only "want to read"; a post's "friends
+can borrow my copy" sets it). Friends see your lendable books in `library` and can
+ask to borrow any that are not lent out. A copy is lent out while a loan with that
+`shelfBook` has no `returned` date; a copy can be on only one active loan. Loans
+logged by hand link the lender's matching shelf copy (by Open Library key or title
+and author) when it is free.
+
+### Notifications
+
+The only notification: when a friend posts that they are reading a book, each of
+their current friends gets one in-app notification. The unique index on
+`(user, actor, bookKey)` makes it once per friend per book, ever (`bookKey` is the
+Open Library work key, or lowercase title|author). Progress updates and finished
+posts never notify. There is no email or push.
 
 ## API
 
 All domain calls are `POST /api/dogear/{action}` with a JSON body, a PocketBase
 bearer token and a verified `users` record. Every action runs in one
 `RunInTransaction`, authorizes against current data, mutates, and returns the
-caller's full `State` (`me, code, people, friends, posts, loans, requests, shelf,
-notes`). The frontend replaces its state with each response; a 60-second and
+caller's full `State` (`me, code, people, friends, friendRequests, sentRequests,
+posts, loans, requests, shelf, library, notes, notifications`). The frontend replaces its state with each response; a 60-second and
 on-focus refresh picks up friends' changes.
 
 | Action | Body | Rule |
@@ -46,19 +67,23 @@ on-focus refresh picks up friends' changes.
 | `state` | `{}` | |
 | `befriend` | `code` | Creates a mutual friendship; own code or repeat is a no-op |
 | `unfriend` | `id` | Either side; loans between you remain visible |
-| `shelf-add` | `book, status` | Upserts by Open Library key or case-insensitive title+author |
-| `shelf-update`, `shelf-remove` | `id[, status]` | Owner only; removal unlinks notes |
+| `friend-request` | `id` (user) | Requires a mutual friend; asking someone who asked you accepts; repeats and declined requests are quiet no-ops |
+| `friend-respond` | `id, accept` | Recipient only |
+| `shelf-add` | `book, status, lendable?` | Upserts by Open Library key or case-insensitive title+author |
+| `shelf-update` | `id, status?, lendable?` | Owner only |
+| `shelf-remove` | `id` | Owner only; unlinks notes, drops pending borrow requests |
 | `note-save` | `id?, bookId?, text, tags[]` | Owner only; `bookId` must be your shelf book |
 | `note-delete` | `id` | Owner only |
-| `post` | `book, status, progress/rating, thoughts, canLend` | Also upserts the shelf entry |
-| `post-delete` | `id` | Author only; removes likes, comments, requests |
+| `post` | `book, status, progress/rating, thoughts, canLend` | Upserts the shelf entry and its `lendable`; a reading post notifies friends once per book |
+| `post-delete` | `id` | Author only; removes likes, comments, its notifications |
 | `like` (toggle), `comment` | `id[, text]` | Post must be yours or a current friend's |
-| `request` | `id` | Friend's post with `canLend`; one pending request per person |
-| `respond` | `id, accept` | Post author; accepting creates a loan to the requester |
-| `loan` | `direction, friend \| contact, book, due?` | `friend` must be a current friend |
-| `return`, `unreturn` | `id` | Either party |
+| `request` | `id` (shelf book) | A friend's lendable copy that is not lent out; one pending request per person |
+| `respond` | `id, accept` | Book owner; accepting needs a free copy and a current friend, and creates a linked loan |
+| `loan` | `direction, friend \| contact, book, shelfBook?, due?` | `friend` must be a current friend; `shelfBook` is your free copy when lending |
+| `return`, `unreturn` | `id` | Either party; undo is refused if the copy is lent out again |
 | `nudge` | `id` | Lender only, active loan with an app friend |
 | `loan-delete` | `id` | Whoever logged it |
+| `notifications-read` | `{}` | Marks your notifications read |
 
 `GET /api/dogear/search?q=` (authenticated) proxies Open Library's search with an
 identifying User-Agent, a 10-second timeout and a 1-hour in-memory cache.
@@ -72,8 +97,10 @@ of 32 characters, normalized to lowercase-hyphenated.
 
 - Feed posts are visible to the author and the author's current friends. Comments
   and hearts are visible to whoever can see the post, which can include friends of
-  the author you are not friends with yourself (their names are shown).
-- Shelf and notes are private to their owner.
+  the author you are not friends with yourself. Tapping their name offers a friend
+  request; requests are only allowed between people with a mutual friend.
+- Notes are private. Of your shelf, friends see only lendable books (and whether
+  they are lent out); the rest is private.
 - A loan is visible to its lender and borrower. Unfriending does not hide it.
 - Invite links are bearer links: anyone with the link who signs in becomes your
   friend. There is no code rotation yet.

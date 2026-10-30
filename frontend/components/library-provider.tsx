@@ -19,6 +19,8 @@ type NewLoan = {
   friend?: string
   contact?: string
   book: Book
+  /** Your shelf copy, when lending one. */
+  shelfBook?: string
   /** YYYY-MM-DD */
   due?: string
 }
@@ -37,7 +39,8 @@ type LibraryContextValue = LibraryState & {
   deletePost: (postId: string) => Promise<void>
   toggleLike: (postId: string) => Promise<void>
   addComment: (postId: string, text: string) => Promise<void>
-  requestBorrow: (postId: string) => Promise<void>
+  /** Ask a friend to lend you a book from their shelf. */
+  requestBorrow: (shelfBookId: string) => Promise<void>
   respondToRequest: (requestId: string, accept: boolean) => Promise<void>
   addLoan: (loan: NewLoan) => Promise<void>
   markReturned: (loanId: string) => Promise<void>
@@ -46,11 +49,15 @@ type LibraryContextValue = LibraryState & {
   deleteLoan: (loanId: string) => Promise<void>
   addToShelf: (book: Book, status: ShelfStatus) => Promise<void>
   setShelfStatus: (bookId: string, status: ShelfStatus) => Promise<void>
+  setLendable: (bookId: string, lendable: boolean) => Promise<void>
   removeFromShelf: (bookId: string) => Promise<void>
   saveNote: (note: NoteInput) => Promise<void>
   deleteNote: (noteId: string) => Promise<void>
   befriend: (code: string) => Promise<void>
   unfriend: (friendId: string) => Promise<void>
+  sendFriendRequest: (userId: string) => Promise<void>
+  respondToFriendRequest: (requestId: string, accept: boolean) => Promise<void>
+  markNotificationsRead: () => Promise<void>
 }
 
 const LibraryContext = createContext<LibraryContextValue | null>(null)
@@ -118,11 +125,15 @@ export function LibraryProvider({
       deleteLoan: (id) => run('loan-delete', { id }),
       addToShelf: (book, status) => run('shelf-add', { book, status }),
       setShelfStatus: (id, status) => run('shelf-update', { id, status }),
+      setLendable: (id, lendable) => run('shelf-update', { id, lendable }),
       removeFromShelf: (id) => run('shelf-remove', { id }),
       saveNote: (note) => run('note-save', note),
       deleteNote: (id) => run('note-delete', { id }),
       befriend: (code) => run('befriend', { code }),
       unfriend: (id) => run('unfriend', { id }),
+      sendFriendRequest: (id) => run('friend-request', { id }),
+      respondToFriendRequest: (id, accept) => run('friend-respond', { id, accept }),
+      markNotificationsRead: () => run('notifications-read'),
     }
   }, [state, run, refresh])
 

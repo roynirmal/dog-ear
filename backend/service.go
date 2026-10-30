@@ -40,9 +40,11 @@ type Book struct {
 type Input struct {
 	ID        string   `json:"id"`
 	BookID    string   `json:"bookId"`
+	ShelfBook string   `json:"shelfBook"`
 	Code      string   `json:"code"`
 	Book      *Book    `json:"book"`
 	Status    string   `json:"status"`
+	Lendable  *bool    `json:"lendable"`
 	Progress  *int     `json:"progress"`
 	Rating    *int     `json:"rating"`
 	Thoughts  string   `json:"thoughts"`
@@ -54,75 +56,6 @@ type Input struct {
 	Contact   string   `json:"contact"`
 	Due       string   `json:"due"`
 	Accept    bool     `json:"accept"`
-}
-
-type Person struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-type Comment struct {
-	ID        string `json:"id"`
-	AuthorID  string `json:"authorId"`
-	Text      string `json:"text"`
-	CreatedAt string `json:"createdAt"`
-}
-type Post struct {
-	ID        string    `json:"id"`
-	AuthorID  string    `json:"authorId"`
-	Book      Book      `json:"book"`
-	Status    string    `json:"status"`
-	Progress  *int      `json:"progress,omitempty"`
-	Rating    *int      `json:"rating,omitempty"`
-	Thoughts  string    `json:"thoughts"`
-	CreatedAt string    `json:"createdAt"`
-	LikedBy   []string  `json:"likedBy"`
-	Comments  []Comment `json:"comments"`
-	CanLend   bool      `json:"canLend"`
-	Requested bool      `json:"requested"`
-}
-type Loan struct {
-	ID         string `json:"id"`
-	Direction  string `json:"direction"`
-	FriendID   string `json:"friendId,omitempty"`
-	Contact    string `json:"contact,omitempty"`
-	Book       Book   `json:"book"`
-	Since      string `json:"since"`
-	DueDate    string `json:"dueDate,omitempty"`
-	ReturnedAt string `json:"returnedAt,omitempty"`
-	NudgedAt   string `json:"nudgedAt,omitempty"`
-	Mine       bool   `json:"mine"`
-}
-type Request struct {
-	ID          string `json:"id"`
-	PostID      string `json:"postId"`
-	Book        Book   `json:"book"`
-	RequesterID string `json:"requesterId"`
-	CreatedAt   string `json:"createdAt"`
-}
-type ShelfBook struct {
-	Book
-	ID      string `json:"id"`
-	Status  string `json:"status"`
-	AddedAt string `json:"addedAt"`
-}
-type Note struct {
-	ID        string   `json:"id"`
-	BookID    string   `json:"bookId,omitempty"`
-	Text      string   `json:"text"`
-	Tags      []string `json:"tags"`
-	CreatedAt string   `json:"createdAt"`
-	UpdatedAt string   `json:"updatedAt"`
-}
-type State struct {
-	Me       Person      `json:"me"`
-	Code     string      `json:"code"`
-	People   []Person    `json:"people"`
-	Friends  []string    `json:"friends"`
-	Posts    []Post      `json:"posts"`
-	Loans    []Loan      `json:"loans"`
-	Requests []Request   `json:"requests"`
-	Shelf    []ShelfBook `json:"shelf"`
-	Notes    []Note      `json:"notes"`
 }
 
 func randomCode() string {
@@ -171,6 +104,15 @@ func cleanBook(b *Book) (Book, error) {
 		return out, errors.New("invalid book details")
 	}
 	return out, nil
+}
+
+// bookKey identifies "the same book" across people: the Open Library work when
+// known, otherwise title and author.
+func bookKey(b Book) string {
+	if b.OLKey != "" {
+		return b.OLKey
+	}
+	return strings.ToLower(b.Title) + "|" + strings.ToLower(b.Author)
 }
 
 func cleanTags(tags []string) ([]string, error) {
@@ -250,6 +192,59 @@ func areFriends(app core.App, x, y string) bool {
 	return err == nil && r != nil
 }
 
+// haveMutualFriend limits friend requests to people you can actually come
+// across in the app: commenters and authors on posts you can see.
+func haveMutualFriend(app core.App, x, y string) (bool, error) {
+	xs, err := friendIDs(app, x)
+	if err != nil {
+		return false, err
+	}
+	ys, err := friendIDs(app, y)
+	if err != nil {
+		return false, err
+	}
+	seen := map[string]bool{}
+	for _, id := range xs {
+		seen[id] = true
+	}
+	for _, id := range ys {
+		if seen[id] {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func makeFriends(app core.App, x, y string) error {
+	if x == y {
+		return nil
+	}
+	if !areFriends(app, x, y) {
+		r, err := newRecord(app, "friendships")
+		if err != nil {
+			return err
+		}
+		a, b := pair(x, y)
+		r.Set("a", a)
+		r.Set("b", b)
+		if err := app.Save(r); err != nil {
+			return err
+		}
+	}
+	// Any requests between the two are settled by the friendship.
+	pending, err := app.FindAllRecords("friend_requests", dbx.Or(
+		dbx.HashExp{"from": x, "to": y}, dbx.HashExp{"from": y, "to": x}))
+	if err != nil {
+		return err
+	}
+	for _, r := range pending {
+		if err := app.Delete(r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func find(app core.App, collection, id string) (*core.Record, error) {
 	if id == "" {
 		return nil, ErrNotFound
@@ -290,6 +285,10 @@ func decodeBook(r *core.Record) Book {
 	return b
 }
 
+func shelfBookOf(r *core.Record) Book {
+	return Book{r.GetString("title"), r.GetString("author"), r.GetString("olKey"), r.GetInt("coverId"), r.GetInt("year")}
+}
+
 func newRecord(app core.App, collection string) (*core.Record, error) {
 	c, err := app.FindCachedCollectionByNameOrId(collection)
 	if err != nil {
@@ -298,24 +297,33 @@ func newRecord(app core.App, collection string) (*core.Record, error) {
 	return core.NewRecord(c), nil
 }
 
-// upsertShelf keeps the poster's shelf in step with what they share.
-func upsertShelf(app core.App, uid string, b Book, status string) error {
-	rs, err := app.FindAllRecords("books", dbx.HashExp{"owner": uid})
+// findShelf returns the owner's copy of a book, matched by Open Library key or
+// case-insensitive title and author.
+func findShelf(app core.App, owner string, b Book) (*core.Record, error) {
+	rs, err := app.FindAllRecords("books", dbx.HashExp{"owner": owner})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	var r *core.Record
-	for _, candidate := range rs {
-		sameKey := b.OLKey != "" && candidate.GetString("olKey") == b.OLKey
-		sameText := strings.EqualFold(candidate.GetString("title"), b.Title) && strings.EqualFold(candidate.GetString("author"), b.Author)
+	for _, r := range rs {
+		sameKey := b.OLKey != "" && r.GetString("olKey") == b.OLKey
+		sameText := strings.EqualFold(r.GetString("title"), b.Title) && strings.EqualFold(r.GetString("author"), b.Author)
 		if sameKey || sameText {
-			r = candidate
-			break
+			return r, nil
 		}
+	}
+	return nil, nil
+}
+
+// upsertShelf adds or updates a shelf book. lendable nil keeps an existing
+// setting and defaults new books to lendable unless they are only wanted.
+func upsertShelf(app core.App, uid string, b Book, status string, lendable *bool) (*core.Record, error) {
+	r, err := findShelf(app, uid, b)
+	if err != nil {
+		return nil, err
 	}
 	if r == nil {
 		if r, err = newRecord(app, "books"); err != nil {
-			return err
+			return nil, err
 		}
 		r.Set("owner", uid)
 		r.Set("title", b.Title)
@@ -323,9 +331,63 @@ func upsertShelf(app core.App, uid string, b Book, status string) error {
 		r.Set("olKey", b.OLKey)
 		r.Set("coverId", b.CoverID)
 		r.Set("year", b.Year)
+		r.Set("lendable", status != "want")
+	}
+	if lendable != nil {
+		r.Set("lendable", *lendable)
 	}
 	r.Set("status", status)
-	return app.Save(r)
+	return r, app.Save(r)
+}
+
+func lentOut(app core.App, shelfBookID string) bool {
+	if shelfBookID == "" {
+		return false
+	}
+	r, err := app.FindFirstRecordByFilter("loans", "shelfBook = {:b} && returned = ''", dbx.Params{"b": shelfBookID})
+	return err == nil && r != nil
+}
+
+// notifyStartedReading tells each current friend, once per book, that the
+// author started reading it.
+func notifyStartedReading(app core.App, author string, post *core.Record, b Book) error {
+	friends, err := friendIDs(app, author)
+	if err != nil {
+		return err
+	}
+	key := bookKey(b)
+	for _, friend := range friends {
+		existing, _ := app.FindFirstRecordByFilter("notifications", "user = {:u} && actor = {:a} && bookKey = {:k}",
+			dbx.Params{"u": friend, "a": author, "k": key})
+		if existing != nil {
+			continue
+		}
+		n, err := newRecord(app, "notifications")
+		if err != nil {
+			return err
+		}
+		n.Set("user", friend)
+		n.Set("actor", author)
+		n.Set("post", post.Id)
+		n.Set("bookKey", key)
+		if err := app.Save(n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func deleteAll(app core.App, collection string, where dbx.Expression) error {
+	rs, err := app.FindAllRecords(collection, where)
+	if err != nil {
+		return err
+	}
+	for _, r := range rs {
+		if err := app.Delete(r); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ensureCode(app core.App, u *core.Record) error {
@@ -380,17 +442,7 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		if err != nil || other == nil {
 			return errors.New("this invite link is not valid")
 		}
-		if other.Id == uid || areFriends(app, uid, other.Id) {
-			return nil // harmless repeat or own link
-		}
-		r, err := newRecord(app, "friendships")
-		if err != nil {
-			return err
-		}
-		a, b := pair(uid, other.Id)
-		r.Set("a", a)
-		r.Set("b", b)
-		return app.Save(r)
+		return makeFriends(app, uid, other.Id) // own link or a repeat is harmless
 
 	case "unfriend":
 		a, b := pair(uid, in.ID)
@@ -400,6 +452,56 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		}
 		return app.Delete(r)
 
+	case "friend-request":
+		other, err := find(app, "users", in.ID)
+		if err != nil || other.Id == uid {
+			return ErrNotFound
+		}
+		if areFriends(app, uid, other.Id) {
+			return nil
+		}
+		mutual, err := haveMutualFriend(app, uid, other.Id)
+		if err != nil {
+			return err
+		}
+		if !mutual {
+			return ErrNotFound
+		}
+		// They already asked you: asking back is accepting.
+		reverse, err := app.FindAllRecords("friend_requests", dbx.HashExp{"from": other.Id, "to": uid, "status": "pending"})
+		if err != nil {
+			return err
+		}
+		if len(reverse) > 0 {
+			return makeFriends(app, uid, other.Id)
+		}
+		existing, err := app.FindAllRecords("friend_requests", dbx.HashExp{"from": uid, "to": other.Id})
+		if err != nil {
+			return err
+		}
+		if len(existing) > 0 {
+			return nil // pending, or quietly declined
+		}
+		r, err := newRecord(app, "friend_requests")
+		if err != nil {
+			return err
+		}
+		r.Set("from", uid)
+		r.Set("to", other.Id)
+		r.Set("status", "pending")
+		return app.Save(r)
+
+	case "friend-respond":
+		r, err := owned(app, "friend_requests", "to", uid, in.ID)
+		if err != nil || r.GetString("status") != "pending" {
+			return ErrNotFound
+		}
+		if in.Accept {
+			return makeFriends(app, uid, r.GetString("from"))
+		}
+		r.Set("status", "declined")
+		return app.Save(r)
+
 	case "shelf-add":
 		b, err := cleanBook(in.Book)
 		if err != nil {
@@ -408,17 +510,26 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		if !shelfStatuses[in.Status] {
 			return errors.New("invalid shelf status")
 		}
-		return upsertShelf(app, uid, b, in.Status)
+		_, err = upsertShelf(app, uid, b, in.Status, in.Lendable)
+		return err
 
 	case "shelf-update":
 		r, err := owned(app, "books", "owner", uid, in.ID)
 		if err != nil {
 			return err
 		}
-		if !shelfStatuses[in.Status] {
-			return errors.New("invalid shelf status")
+		if in.Status == "" && in.Lendable == nil {
+			return errors.New("nothing to update")
 		}
-		r.Set("status", in.Status)
+		if in.Status != "" {
+			if !shelfStatuses[in.Status] {
+				return errors.New("invalid shelf status")
+			}
+			r.Set("status", in.Status)
+		}
+		if in.Lendable != nil {
+			r.Set("lendable", *in.Lendable)
+		}
 		return app.Save(r)
 
 	case "shelf-remove":
@@ -436,6 +547,9 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 			if err := app.Save(n); err != nil {
 				return err
 			}
+		}
+		if err := deleteAll(app, "requests", dbx.HashExp{"book": r.Id, "status": "pending"}); err != nil {
+			return err
 		}
 		return app.Delete(r)
 
@@ -506,30 +620,34 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		default:
 			return errors.New("invalid reading status")
 		}
+		// A book you read belongs on your shelf; "friends can borrow my copy"
+		// is that shelf book's lending setting.
+		shelf, err := upsertShelf(app, uid, b, in.Status, &in.CanLend)
+		if err != nil {
+			return err
+		}
 		r.Set("owner", uid)
 		r.Set("book", b)
 		r.Set("status", in.Status)
 		r.Set("thoughts", thoughts)
 		r.Set("canLend", in.CanLend)
+		r.Set("shelfBook", shelf.Id)
 		if err := app.Save(r); err != nil {
 			return err
 		}
-		return upsertShelf(app, uid, b, in.Status)
+		if in.Status == "reading" {
+			return notifyStartedReading(app, uid, r, b)
+		}
+		return nil
 
 	case "post-delete":
 		r, err := owned(app, "posts", "owner", uid, in.ID)
 		if err != nil {
 			return err
 		}
-		for _, collection := range []string{"likes", "comments", "requests"} {
-			children, err := app.FindAllRecords(collection, dbx.HashExp{"post": r.Id})
-			if err != nil {
+		for _, collection := range []string{"likes", "comments", "notifications"} {
+			if err := deleteAll(app, collection, dbx.HashExp{"post": r.Id}); err != nil {
 				return err
-			}
-			for _, c := range children {
-				if err := app.Delete(c); err != nil {
-					return err
-				}
 			}
 		}
 		return app.Delete(r)
@@ -570,14 +688,18 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		return app.Save(r)
 
 	case "request":
-		p, err := visiblePost(app, uid, in.ID)
+		book, err := find(app, "books", in.ID)
 		if err != nil {
 			return err
 		}
-		if p.GetString("owner") == uid || !p.GetBool("canLend") {
-			return errors.New("this book is not available to borrow")
+		owner := book.GetString("owner")
+		if owner == uid || !areFriends(app, uid, owner) {
+			return ErrNotFound
 		}
-		existing, _ := app.FindFirstRecordByFilter("requests", "post = {:p} && requester = {:u} && status = 'pending'", dbx.Params{"p": p.Id, "u": uid})
+		if !book.GetBool("lendable") || lentOut(app, book.Id) {
+			return errors.New("this book is not available to borrow right now")
+		}
+		existing, _ := app.FindFirstRecordByFilter("requests", "book = {:b} && requester = {:u} && status = 'pending'", dbx.Params{"b": book.Id, "u": uid})
 		if existing != nil {
 			return nil
 		}
@@ -585,8 +707,8 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		if err != nil {
 			return err
 		}
-		r.Set("post", p.Id)
-		r.Set("owner", p.GetString("owner"))
+		r.Set("book", book.Id)
+		r.Set("owner", owner)
 		r.Set("requester", uid)
 		r.Set("status", "pending")
 		return app.Save(r)
@@ -600,9 +722,16 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 			r.Set("status", "declined")
 			return app.Save(r)
 		}
-		p, err := find(app, "posts", r.GetString("post"))
+		requester := r.GetString("requester")
+		if !areFriends(app, uid, requester) {
+			return errors.New("you can only lend to friends")
+		}
+		book, err := owned(app, "books", "owner", uid, r.GetString("book"))
 		if err != nil {
 			return err
+		}
+		if lentOut(app, book.Id) {
+			return errors.New("this book is already lent out; mark it returned first")
 		}
 		r.Set("status", "accepted")
 		if err := app.Save(r); err != nil {
@@ -613,8 +742,9 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 			return err
 		}
 		loan.Set("lender", uid)
-		loan.Set("borrower", r.GetString("requester"))
-		loan.Set("book", decodeBook(p))
+		loan.Set("borrower", requester)
+		loan.Set("book", shelfBookOf(book))
+		loan.Set("shelfBook", book.Id)
 		loan.Set("createdBy", uid)
 		loan.Set("since", now())
 		return app.Save(loan)
@@ -635,7 +765,7 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		other := strings.TrimSpace(in.Friend)
 		if other != "" {
 			if !areFriends(app, uid, other) {
-				return errors.New("you can only log loans with friends in your circle")
+				return errors.New("you can only log loans with your friends")
 			}
 			contact = ""
 		} else if contact == "" {
@@ -645,16 +775,41 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		if err != nil {
 			return err
 		}
+		var lender string
 		switch in.Direction {
 		case "lent":
+			lender = uid
 			r.Set("lender", uid)
 			r.Set("borrower", other)
 		case "borrowed":
+			lender = other
 			r.Set("lender", other)
 			r.Set("borrower", uid)
 		default:
 			return errors.New("invalid loan direction")
 		}
+		// Link the lender's shelf copy so friends see it as lent out.
+		shelfBook := ""
+		if in.ShelfBook != "" {
+			if in.Direction != "lent" {
+				return errors.New("only books you lend come from your shelf")
+			}
+			book, err := owned(app, "books", "owner", uid, in.ShelfBook)
+			if err != nil {
+				return err
+			}
+			if lentOut(app, book.Id) {
+				return errors.New("this book is already lent out; mark it returned first")
+			}
+			shelfBook = book.Id
+		} else if lender != "" {
+			if match, err := findShelf(app, lender, b); err != nil {
+				return err
+			} else if match != nil && !lentOut(app, match.Id) {
+				shelfBook = match.Id
+			}
+		}
+		r.Set("shelfBook", shelfBook)
 		r.Set("contact", contact)
 		r.Set("book", b)
 		r.Set("createdBy", uid)
@@ -677,6 +832,9 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 				r.Set("returned", now())
 			}
 		case "unreturn":
+			if r.GetString("returned") != "" && lentOut(app, r.GetString("shelfBook")) {
+				return errors.New("that copy is lent out again; it cannot be on two loans at once")
+			}
 			r.Set("returned", "")
 		case "nudge":
 			if lender != uid || borrower == "" || r.GetString("returned") != "" {
@@ -690,147 +848,19 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 			return app.Delete(r)
 		}
 		return app.Save(r)
-	}
-	return errors.New("unknown action")
-}
 
-func load(app core.App, u *core.Record) (*State, error) {
-	uid := u.Id
-	s := &State{Me: Person{uid, displayName(u)}, Code: u.GetString("code"), Posts: []Post{}, Loans: []Loan{}, Requests: []Request{}, Shelf: []ShelfBook{}, Notes: []Note{}}
-	friends, err := friendIDs(app, uid)
-	if err != nil {
-		return nil, err
-	}
-	s.Friends = friends
-	people := map[string]bool{uid: true}
-	for _, id := range friends {
-		people[id] = true
-	}
-
-	authors := anyIDs(append([]string{uid}, friends...))
-	posts, err := app.FindAllRecords("posts", dbx.In("owner", authors...))
-	if err != nil {
-		return nil, err
-	}
-	sort.Slice(posts, func(i, j int) bool {
-		return posts[i].GetDateTime("created").Time().After(posts[j].GetDateTime("created").Time())
-	})
-	if len(posts) > feedLimit {
-		posts = posts[:feedLimit]
-	}
-	postIDs := make([]string, len(posts))
-	index := map[string]int{}
-	for i, p := range posts {
-		postIDs[i] = p.Id
-		index[p.Id] = i
-		view := Post{ID: p.Id, AuthorID: p.GetString("owner"), Book: decodeBook(p), Status: p.GetString("status"), Thoughts: p.GetString("thoughts"),
-			CreatedAt: stamp(p, "created"), LikedBy: []string{}, Comments: []Comment{}, CanLend: p.GetBool("canLend")}
-		if view.Status == "reading" {
-			progress := p.GetInt("progress")
-			view.Progress = &progress
-		} else if rating := p.GetInt("rating"); rating > 0 {
-			view.Rating = &rating
-		}
-		s.Posts = append(s.Posts, view)
-	}
-	if len(postIDs) > 0 {
-		likes, err := app.FindAllRecords("likes", dbx.In("post", anyIDs(postIDs)...))
+	case "notifications-read":
+		unread, err := app.FindAllRecords("notifications", dbx.HashExp{"user": uid, "read": false})
 		if err != nil {
-			return nil, err
+			return err
 		}
-		for _, l := range likes {
-			p := &s.Posts[index[l.GetString("post")]]
-			p.LikedBy = append(p.LikedBy, l.GetString("user"))
-			people[l.GetString("user")] = true
-		}
-		comments, err := app.FindAllRecords("comments", dbx.In("post", anyIDs(postIDs)...))
-		if err != nil {
-			return nil, err
-		}
-		sort.Slice(comments, func(i, j int) bool {
-			return comments[i].GetDateTime("created").Time().Before(comments[j].GetDateTime("created").Time())
-		})
-		for _, c := range comments {
-			p := &s.Posts[index[c.GetString("post")]]
-			p.Comments = append(p.Comments, Comment{c.Id, c.GetString("user"), c.GetString("text"), stamp(c, "created")})
-			people[c.GetString("user")] = true
-		}
-		mine, err := app.FindAllRecords("requests", dbx.HashExp{"requester": uid, "status": "pending"})
-		if err != nil {
-			return nil, err
-		}
-		for _, r := range mine {
-			if i, ok := index[r.GetString("post")]; ok {
-				s.Posts[i].Requested = true
+		for _, n := range unread {
+			n.Set("read", true)
+			if err := app.Save(n); err != nil {
+				return err
 			}
 		}
+		return nil
 	}
-
-	incoming, err := app.FindAllRecords("requests", dbx.HashExp{"owner": uid, "status": "pending"})
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range incoming {
-		p, err := find(app, "posts", r.GetString("post"))
-		if err != nil {
-			continue
-		}
-		s.Requests = append(s.Requests, Request{r.Id, p.Id, decodeBook(p), r.GetString("requester"), stamp(r, "created")})
-		people[r.GetString("requester")] = true
-	}
-	sort.Slice(s.Requests, func(i, j int) bool { return s.Requests[i].CreatedAt > s.Requests[j].CreatedAt })
-
-	loans, err := app.FindAllRecords("loans", dbx.Or(dbx.HashExp{"lender": uid}, dbx.HashExp{"borrower": uid}))
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range loans {
-		l := Loan{ID: r.Id, Contact: r.GetString("contact"), Book: decodeBook(r), Since: r.GetString("since"), DueDate: r.GetString("due"),
-			ReturnedAt: r.GetString("returned"), NudgedAt: r.GetString("nudged"), Mine: r.GetString("createdBy") == uid}
-		if r.GetString("lender") == uid {
-			l.Direction, l.FriendID = "lent", r.GetString("borrower")
-		} else {
-			l.Direction, l.FriendID = "borrowed", r.GetString("lender")
-		}
-		if l.FriendID != "" {
-			people[l.FriendID] = true
-		}
-		s.Loans = append(s.Loans, l)
-	}
-	sort.Slice(s.Loans, func(i, j int) bool { return s.Loans[i].Since > s.Loans[j].Since })
-
-	shelf, err := app.FindAllRecords("books", dbx.HashExp{"owner": uid})
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range shelf {
-		s.Shelf = append(s.Shelf, ShelfBook{Book{r.GetString("title"), r.GetString("author"), r.GetString("olKey"), r.GetInt("coverId"), r.GetInt("year")},
-			r.Id, r.GetString("status"), stamp(r, "created")})
-	}
-	sort.Slice(s.Shelf, func(i, j int) bool { return s.Shelf[i].AddedAt > s.Shelf[j].AddedAt })
-
-	notes, err := app.FindAllRecords("notes", dbx.HashExp{"owner": uid})
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range notes {
-		tags := []string{}
-		_ = r.UnmarshalJSONField("tags", &tags)
-		s.Notes = append(s.Notes, Note{r.Id, r.GetString("book"), r.GetString("text"), tags, stamp(r, "created"), stamp(r, "updated")})
-	}
-	sort.Slice(s.Notes, func(i, j int) bool { return s.Notes[i].UpdatedAt > s.Notes[j].UpdatedAt })
-
-	ids := make([]string, 0, len(people))
-	for id := range people {
-		ids = append(ids, id)
-	}
-	users, err := app.FindRecordsByIds("users", ids)
-	if err != nil {
-		return nil, err
-	}
-	for _, p := range users {
-		s.People = append(s.People, Person{p.Id, displayName(p)})
-	}
-	sort.Slice(s.People, func(i, j int) bool { return s.People[i].Name < s.People[j].Name })
-	return s, nil
+	return errors.New("unknown action")
 }

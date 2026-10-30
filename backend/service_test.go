@@ -113,40 +113,72 @@ func TestFriendsSeeEachOthersPostsOnly(t *testing.T) {
 	}
 }
 
-func TestBorrowRequestBecomesSharedLoan(t *testing.T) {
+func TestBorrowFromShelfBecomesSharedLoan(t *testing.T) {
 	app := testApp(t)
 	maya := testUser(t, app, "maya@example.com", true)
 	theo := testUser(t, app, "theo@example.com", true)
 	befriend(t, app, maya, theo)
-	postID := call(t, app, maya, "post", Input{Book: book("Circe"), Status: "finished", Rating: intp(5), CanLend: true}).Posts[0].ID
-	noLend := call(t, app, maya, "post", Input{Book: book("Mine"), Status: "finished"}).Posts[0].ID
+	s := call(t, app, maya, "post", Input{Book: book("Circe"), Status: "finished", Rating: intp(5), CanLend: true})
+	call(t, app, maya, "post", Input{Book: book("Mine"), Status: "finished"})
+	call(t, app, maya, "shelf-add", Input{Book: book("Wishlist"), Status: "want"})
+	s = call(t, app, maya, "state", Input{})
+	shelf := map[string]ShelfBook{}
+	for _, b := range s.Shelf {
+		shelf[b.Title] = b
+	}
+	if !shelf["Circe"].Lendable || shelf["Mine"].Lendable || shelf["Wishlist"].Lendable {
+		t.Fatal("lendable defaults wrong", s.Shelf)
+	}
+	circe := shelf["Circe"].ID
 
-	if _, err := execute(app, theo, "request", Input{ID: noLend}); err == nil {
+	ts := call(t, app, theo, "state", Input{})
+	if len(ts.Library) != 1 || ts.Library[0].ID != circe || !ts.Library[0].Available {
+		t.Fatal("friend should see only lendable books", ts.Library)
+	}
+	for _, p := range ts.Posts {
+		if p.CanLend != (p.Book.Title == "Circe") {
+			t.Fatal("post lendability wrong", p)
+		}
+	}
+	if _, err := execute(app, theo, "request", Input{ID: shelf["Mine"].ID}); err == nil {
 		t.Fatal("requested a book that is not lendable")
 	}
-	if _, err := execute(app, maya, "request", Input{ID: postID}); err == nil {
-		t.Fatal("requested own book")
+	if _, err := execute(app, maya, "request", Input{ID: circe}); !errors.Is(err, ErrNotFound) {
+		t.Fatal("requested own book", err)
 	}
-	s := call(t, app, theo, "request", Input{ID: postID})
-	call(t, app, theo, "request", Input{ID: postID}) // idempotent
-	if !s.Posts[1].Requested && !s.Posts[0].Requested {
+	outsider := testUser(t, app, "outsider@example.com", true)
+	if _, err := execute(app, outsider, "request", Input{ID: circe}); !errors.Is(err, ErrNotFound) {
+		t.Fatal("non-friend requested", err)
+	}
+	ts = call(t, app, theo, "request", Input{ID: circe})
+	call(t, app, theo, "request", Input{ID: circe}) // idempotent
+	if !ts.Library[0].Requested {
 		t.Fatal("request not reflected")
 	}
 	s = call(t, app, maya, "state", Input{})
-	if len(s.Requests) != 1 || s.Requests[0].RequesterID != theo.Id {
+	if len(s.Requests) != 1 || s.Requests[0].RequesterID != theo.Id || s.Requests[0].BookID != circe {
 		t.Fatal("owner does not see request", s.Requests)
 	}
 	if _, err := execute(app, theo, "respond", Input{ID: s.Requests[0].ID, Accept: true}); !errors.Is(err, ErrNotFound) {
 		t.Fatal("requester accepted own request", err)
 	}
 	s = call(t, app, maya, "respond", Input{ID: s.Requests[0].ID, Accept: true})
-	if len(s.Requests) != 0 || len(s.Loans) != 1 || s.Loans[0].Direction != "lent" || s.Loans[0].FriendID != theo.Id {
+	if len(s.Requests) != 0 || len(s.Loans) != 1 || s.Loans[0].Direction != "lent" || s.Loans[0].FriendID != theo.Id || s.Loans[0].ShelfBookID != circe {
 		t.Fatal("accept did not create a loan", s.Loans)
 	}
 	loanID := s.Loans[0].ID
-	t2 := call(t, app, theo, "state", Input{})
-	if len(t2.Loans) != 1 || t2.Loans[0].Direction != "borrowed" || t2.Loans[0].Book.Title != "Circe" {
-		t.Fatal("borrower does not see loan", t2.Loans)
+	if _, err := execute(app, maya, "loan", Input{Direction: "lent", Contact: "Sam", Book: book("Circe"), ShelfBook: circe}); err == nil {
+		t.Fatal("lent the same copy twice")
+	}
+	ts = call(t, app, theo, "state", Input{})
+	if len(ts.Loans) != 1 || ts.Loans[0].Direction != "borrowed" || ts.Loans[0].Book.Title != "Circe" {
+		t.Fatal("borrower does not see loan", ts.Loans)
+	}
+	if ts.Library[0].Available || ts.Posts[len(ts.Posts)-1].CanLend {
+		t.Fatal("lent-out book still offered")
+	}
+	if _, err := execute(app, theo, "request", Input{ID: circe}); err == nil {
+		t.Fatal("requested a lent-out book")
 	}
 	if _, err := execute(app, theo, "nudge", Input{ID: loanID}); err == nil {
 		t.Fatal("borrower nudged")
@@ -154,8 +186,8 @@ func TestBorrowRequestBecomesSharedLoan(t *testing.T) {
 	if call(t, app, maya, "nudge", Input{ID: loanID}).Loans[0].NudgedAt == "" {
 		t.Fatal("nudge not recorded")
 	}
-	if call(t, app, theo, "return", Input{ID: loanID}).Loans[0].ReturnedAt == "" {
-		t.Fatal("borrower could not mark returned")
+	if call(t, app, theo, "return", Input{ID: loanID}).Library[0].Available != true {
+		t.Fatal("returned book not available again")
 	}
 	if call(t, app, maya, "unreturn", Input{ID: loanID}).Loans[0].ReturnedAt != "" {
 		t.Fatal("undo return failed")
@@ -163,9 +195,113 @@ func TestBorrowRequestBecomesSharedLoan(t *testing.T) {
 	if _, err := execute(app, theo, "loan-delete", Input{ID: loanID}); err == nil {
 		t.Fatal("non-creator deleted loan")
 	}
-	outsider := testUser(t, app, "outsider@example.com", true)
 	if _, err := execute(app, outsider, "return", Input{ID: loanID}); !errors.Is(err, ErrNotFound) {
 		t.Fatal("outsider touched loan", err)
+	}
+	f := false
+	call(t, app, maya, "shelf-update", Input{ID: shelf["Wishlist"].ID, Lendable: &f})
+	tr := true
+	if ts = call(t, app, maya, "shelf-update", Input{ID: shelf["Mine"].ID, Lendable: &tr}); !func() bool {
+		for _, b := range ts.Shelf {
+			if b.Title == "Mine" {
+				return b.Lendable && b.Status == "finished"
+			}
+		}
+		return false
+	}() {
+		t.Fatal("lendable toggle failed or changed status")
+	}
+}
+
+func TestFriendRequestsBetweenFriendsOfFriends(t *testing.T) {
+	app := testApp(t)
+	maya := testUser(t, app, "maya@example.com", true)
+	theo := testUser(t, app, "theo@example.com", true)
+	june := testUser(t, app, "june@example.com", true)
+	stranger := testUser(t, app, "stranger@example.com", true)
+	befriend(t, app, maya, theo)
+	befriend(t, app, maya, june)
+	postID := call(t, app, maya, "post", Input{Book: book("Piranesi"), Status: "finished"}).Posts[0].ID
+	call(t, app, june, "comment", Input{ID: postID, Text: "Loved it"})
+
+	ts := call(t, app, theo, "state", Input{})
+	found := false
+	for _, p := range ts.People {
+		found = found || p.ID == june.Id
+	}
+	if !found {
+		t.Fatal("commenter missing from people")
+	}
+	if _, err := execute(app, stranger, "friend-request", Input{ID: theo.Id}); !errors.Is(err, ErrNotFound) {
+		t.Fatal("request without a mutual friend", err)
+	}
+	ts = call(t, app, theo, "friend-request", Input{ID: june.Id})
+	call(t, app, theo, "friend-request", Input{ID: june.Id}) // repeat is harmless
+	if len(ts.SentRequests) != 1 || ts.SentRequests[0] != june.Id {
+		t.Fatal("sent request not listed", ts.SentRequests)
+	}
+	js := call(t, app, june, "state", Input{})
+	if len(js.FriendRequests) != 1 || js.FriendRequests[0].FromID != theo.Id {
+		t.Fatal("incoming request not listed", js.FriendRequests)
+	}
+	if _, err := execute(app, theo, "friend-respond", Input{ID: js.FriendRequests[0].ID, Accept: true}); !errors.Is(err, ErrNotFound) {
+		t.Fatal("sender accepted own request", err)
+	}
+	js = call(t, app, june, "friend-respond", Input{ID: js.FriendRequests[0].ID, Accept: true})
+	if len(js.Friends) != 2 || len(js.FriendRequests) != 0 {
+		t.Fatal("accept did not befriend", js.Friends)
+	}
+	if ts = call(t, app, theo, "state", Input{}); len(ts.SentRequests) != 0 || len(ts.Friends) != 2 {
+		t.Fatal("friendship not settled for sender")
+	}
+
+	// Asking someone who already asked you accepts; declining is quiet.
+	sam := testUser(t, app, "sam@example.com", true)
+	befriend(t, app, june, sam)
+	call(t, app, sam, "friend-request", Input{ID: theo.Id})
+	if len(call(t, app, theo, "friend-request", Input{ID: sam.Id}).FriendRequests) != 0 || !areFriends(app, theo.Id, sam.Id) {
+		t.Fatal("mutual request did not befriend")
+	}
+	call(t, app, sam, "friend-request", Input{ID: maya.Id})
+	ms := call(t, app, maya, "state", Input{})
+	call(t, app, maya, "friend-respond", Input{ID: ms.FriendRequests[0].ID, Accept: false})
+	if ss := call(t, app, sam, "friend-request", Input{ID: maya.Id}); len(ss.SentRequests) != 1 {
+		t.Fatal("declined request should still read as sent")
+	}
+	if len(call(t, app, maya, "state", Input{}).FriendRequests) != 0 {
+		t.Fatal("declined request came back")
+	}
+}
+
+func TestStartedReadingNotifiesOncePerFriendPerBook(t *testing.T) {
+	app := testApp(t)
+	maya := testUser(t, app, "maya@example.com", true)
+	theo := testUser(t, app, "theo@example.com", true)
+	june := testUser(t, app, "june@example.com", true)
+	befriend(t, app, maya, theo)
+	befriend(t, app, maya, june)
+	dune := &Book{Title: "Dune", Author: "Frank Herbert", OLKey: "/works/OL1W"}
+	call(t, app, maya, "post", Input{Book: dune, Status: "reading", Progress: intp(5)})
+	call(t, app, maya, "post", Input{Book: dune, Status: "reading", Progress: intp(50)})
+	call(t, app, maya, "post", Input{Book: dune, Status: "finished"})
+	call(t, app, maya, "post", Input{Book: book("Emma"), Status: "finished"})
+	ts := call(t, app, theo, "state", Input{})
+	if len(ts.Notifications) != 1 || ts.Notifications[0].ActorID != maya.Id || ts.Notifications[0].Book.Title != "Dune" || ts.Notifications[0].Read {
+		t.Fatal("expected one unread notification", ts.Notifications)
+	}
+	if len(call(t, app, maya, "state", Input{}).Notifications) != 0 {
+		t.Fatal("author notified about own post")
+	}
+	if ts = call(t, app, theo, "notifications-read", Input{}); !ts.Notifications[0].Read {
+		t.Fatal("not marked read")
+	}
+	if len(call(t, app, june, "state", Input{}).Notifications) != 1 {
+		t.Fatal("other friend not notified")
+	}
+	// Theo reading Dune notifies Maya separately: it is per friend, not per book.
+	call(t, app, theo, "post", Input{Book: dune, Status: "reading", Progress: intp(1)})
+	if len(call(t, app, maya, "state", Input{}).Notifications) != 1 {
+		t.Fatal("friend reading the same book did not notify")
 	}
 }
 
@@ -284,7 +420,7 @@ func TestHTTPRequiresAuthAndRejectsUnknownFields(t *testing.T) {
 	if rr.Code != 200 || json.Unmarshal(rr.Body.Bytes(), &s) != nil || s.Me.ID != maya.Id || s.Code == "" {
 		t.Fatal("state failed", rr.Code, rr.Body.String())
 	}
-	for _, collection := range []string{"posts", "loans", "notes", "friendships"} {
+	for _, collection := range []string{"posts", "loans", "notes", "friendships", "friend_requests", "notifications"} {
 		req := httptest.NewRequest("GET", "/api/collections/"+collection+"/records", nil)
 		req.Header.Set("Authorization", token)
 		rec := httptest.NewRecorder()

@@ -23,7 +23,7 @@ export function ShareDialog({
   onOpenChange: (open: boolean) => void
   onShared: () => void
 }) {
-  const { addPost } = useLibrary()
+  const { addPost, shelf } = useLibrary()
   const [book, setBook] = useState<Book | null>(null)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<ReadingStatus>('reading')
@@ -31,6 +31,19 @@ export function ShareDialog({
   const [rating, setRating] = useState(0)
   const [thoughts, setThoughts] = useState('')
   const [canLend, setCanLend] = useState(true)
+
+  // Start from the shelf copy's lending setting when the book is already there.
+  useEffect(() => {
+    if (!book) return
+    const copy = shelf.find((b) =>
+      book.olKey
+        ? b.olKey === book.olKey
+        : b.title.toLowerCase() === book.title.toLowerCase() && b.author.toLowerCase() === book.author.toLowerCase(),
+    )
+    setCanLend(copy ? copy.lendable : true)
+    // Only when the chosen book changes, not on background refreshes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [book])
 
   useEffect(() => {
     if (open) reset(initialBook)
@@ -148,7 +161,7 @@ export function ShareDialog({
               onChange={(e) => setCanLend(e.target.checked)}
               className="size-5 accent-primary"
             />
-            Friends can ask to borrow my copy
+            Friends can borrow my copy
           </label>
 
           <Button type="submit" className="h-12 rounded-full text-base" disabled={!book || busy}>

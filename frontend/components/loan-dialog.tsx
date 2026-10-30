@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import type { Book, LoanDirection } from '@/lib/data'
+import type { Book, LoanDirection, ShelfBook } from '@/lib/data'
 
 const SOMEONE_ELSE = ''
 
@@ -24,7 +24,7 @@ export function LoanDialog({
   onLogged: () => void
 }) {
   const { addLoan, friends, person } = useLibrary()
-  const circle = friends.map(person).sort((a, b) => a.name.localeCompare(b.name))
+  const people = friends.map(person).sort((a, b) => a.name.localeCompare(b.name))
   const [direction, setDirection] = useState<LoanDirection>('lent')
   const [friendId, setFriendId] = useState(SOMEONE_ELSE)
   const [contact, setContact] = useState('')
@@ -45,6 +45,12 @@ export function LoanDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialBook])
 
+  // Lending straight from your shelf links that copy, so friends see it as lent out.
+  const shelfBookId =
+    direction === 'lent' && initialBook && book === initialBook && 'id' in initialBook
+      ? (initialBook as ShelfBook).id
+      : undefined
+
   const ready = !!book && (friendId !== SOMEONE_ELSE || contact.trim() !== '')
 
   async function handleSubmit(event: React.FormEvent) {
@@ -57,6 +63,7 @@ export function LoanDialog({
         friend: friendId || undefined,
         contact: friendId ? undefined : contact.trim(),
         book,
+        shelfBook: shelfBookId,
         due: dueDate || undefined,
       })
       onOpenChange(false)
@@ -93,7 +100,7 @@ export function LoanDialog({
               onChange={(e) => setFriendId(e.target.value)}
               className="h-11 rounded-lg border border-input bg-transparent px-3 text-base outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
             >
-              {circle.map((friend) => (
+              {people.map((friend) => (
                 <option key={friend.id} value={friend.id}>
                   {friend.name}
                 </option>
