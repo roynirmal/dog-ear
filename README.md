@@ -58,6 +58,15 @@ make dev
 Opens Next.js on http://127.0.0.1:5174 against the backend on 8091. Restart after Go
 changes. Ports 8090/5173 are left free for payback.
 
+## Install on a phone
+
+Dog-ear is a progressive web app. Over HTTPS (your public URL), Android and desktop
+Chrome offer an install prompt (also under You → Install Dog-ear); on iPhone use
+Share → Add to Home Screen. `frontend/public/sw.js` caches the app shell and book
+covers so it opens instantly and offline; library data is never cached. Bump
+`VERSION` in `sw.js` if you change its caching rules. The service worker is only
+registered in production builds (`make up`), not in `make dev`.
+
 ## Test
 
 ```sh

@@ -86,7 +86,15 @@ export function AppShell() {
         }
         if (!cancelled) setInitial(state)
       } catch (error) {
-        if (!cancelled && pb.authStore.isValid) setLoadError(error instanceof Error ? error.message : String(error))
+        if (!cancelled && pb.authStore.isValid)
+          // fetch rejects with a TypeError when the network is unreachable.
+          setLoadError(
+            !navigator.onLine || error instanceof TypeError
+              ? 'You’re offline. Your shelf will be here when you reconnect.'
+              : error instanceof Error
+                ? error.message
+                : String(error),
+          )
       }
     })()
     return () => {

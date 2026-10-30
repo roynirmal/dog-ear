@@ -1,13 +1,25 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowLeftRight, BookPlus, HandHeart, Lock, LogOut, NotebookPen, PenLine, Trash2 } from 'lucide-react'
+import {
+  ArrowLeftRight,
+  BookPlus,
+  Download,
+  HandHeart,
+  Lock,
+  LogOut,
+  NotebookPen,
+  PenLine,
+  Share,
+  Trash2,
+} from 'lucide-react'
 import { shelfStatusOptions } from '@/components/add-book-dialog'
 import { BookCover } from '@/components/book-cover'
 import { FilterChips } from '@/components/filter-chips'
 import { FriendAvatar } from '@/components/friend-avatar'
 import { useLibrary } from '@/components/library-provider'
 import { PostCard } from '@/components/post-card'
+import { useInstall } from '@/components/service-worker'
 import { Button } from '@/components/ui/button'
 import { signOut } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -54,6 +66,7 @@ export function ProfileView({
             </div>
           ))}
         </dl>
+        <InstallApp />
         <Button variant="ghost" className="h-11 gap-1.5 px-3 text-muted-foreground" onClick={signOut}>
           <LogOut className="size-4" />
           Sign out
@@ -314,4 +327,23 @@ function EmptyState({
       </Button>
     </div>
   )
+}
+
+function InstallApp() {
+  const { mode, install } = useInstall()
+  if (mode === 'prompt')
+    return (
+      <Button className="h-11 gap-1.5 rounded-full px-5" onClick={() => install().catch(() => undefined)}>
+        <Download className="size-4" />
+        Install Dog-ear
+      </Button>
+    )
+  if (mode === 'ios')
+    return (
+      <p className="max-w-xs text-sm text-pretty text-muted-foreground">
+        Add Dog-ear to your home screen: tap <Share aria-label="Share" className="inline size-4 align-[-3px]" /> then
+        “Add to Home Screen”.
+      </p>
+    )
+  return null
 }
