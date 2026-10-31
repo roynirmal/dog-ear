@@ -11,3 +11,4 @@ frontend/*.tsbuildinfo
 .env.*
 !.env.example
 .DS_Store
+.omx/

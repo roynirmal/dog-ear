@@ -380,6 +380,8 @@ func testHandler(t *testing.T, app core.App) http.Handler {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Match apis.Serve, which installs PocketBase's default CORS before OnServe.
+	r.Bind(apis.CORS(apis.DefaultCORSConfig))
 	se := &core.ServeEvent{App: app, Router: r}
 	if err := app.OnServe().Trigger(se, func(e *core.ServeEvent) error { return nil }); err != nil {
 		t.Fatal(err)
@@ -389,6 +391,61 @@ func testHandler(t *testing.T, app core.App) http.Handler {
 		t.Fatal(err)
 	}
 	return h
+}
+
+func TestHTTPAllowedOrigins(t *testing.T) {
+	h := testHandler(t, testApp(t))
+	for _, tc := range []struct {
+		origin string
+		allow  bool
+	}{
+		{"https://dog-ear.app", true},
+		{"http://127.0.0.1:8091", true},
+		{"http://localhost:8091", true},
+		{"http://127.0.0.1:5174", true},
+		{"http://localhost:5174", true},
+		{"https://other.example", false},
+		{"https://dog-ear.app.other.example", false},
+		{"http://dog-ear.app", false},
+		{"http://localhost:9999", false},
+		{"null", false},
+		{"", false},
+	} {
+		t.Run(tc.origin, func(t *testing.T) {
+			for _, method := range []string{http.MethodGet, http.MethodOptions} {
+				req := httptest.NewRequest(method, "/api/dogear/config", nil)
+				req.Header.Set("Origin", tc.origin)
+				if method == http.MethodOptions {
+					req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+					req.Header.Set("Access-Control-Request-Headers", "Authorization, Content-Type")
+				}
+				rr := httptest.NewRecorder()
+				h.ServeHTTP(rr, req)
+				wantStatus := http.StatusOK
+				if method == http.MethodOptions {
+					wantStatus = http.StatusNoContent
+				}
+				if rr.Code != wantStatus {
+					t.Fatalf("%s: status = %d, want %d", method, rr.Code, wantStatus)
+				}
+				wantOrigin := ""
+				if tc.allow {
+					wantOrigin = tc.origin
+				}
+				if got := rr.Header().Get("Access-Control-Allow-Origin"); got != wantOrigin {
+					t.Errorf("%s: allowed origin = %q, want %q", method, got, wantOrigin)
+				}
+				if tc.allow && method == http.MethodOptions {
+					if !strings.Contains(rr.Header().Get("Access-Control-Allow-Methods"), http.MethodPost) {
+						t.Error("preflight must allow POST for OAuth and app actions")
+					}
+					if rr.Header().Get("Access-Control-Allow-Headers") != "Authorization, Content-Type" {
+						t.Error("preflight must allow authorization and JSON headers")
+					}
+				}
+			}
+		})
+	}
 }
 
 func TestHTTPRequiresAuthAndRejectsUnknownFields(t *testing.T) {

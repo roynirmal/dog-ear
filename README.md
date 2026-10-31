@@ -15,29 +15,28 @@ Share what you're reading with friends, and keep track of the books you lend and
 Built with Next.js (static export) and PocketBase extended in Go, the same backend
 stack as payback.
 
-## Setup
+## Local development
 
-Requires Go 1.27 (or automatic Go toolchain downloads), Node.js 22+, and npm.
+Requires Go 1.27 (or automatic toolchain downloads), Node.js 22+, and npm.
 
 ```sh
 make install
+make dev
 ```
 
-Configure Google sign-in in the backend shell; `.env` files are not loaded:
+Open http://127.0.0.1:5174; PocketBase admin is at http://127.0.0.1:8091/_/.
+Restart after Go changes; Ctrl+C stops both servers.
 
-| Variable                                   | Purpose                                                                               |
-| ------------------------------------------ | ------------------------------------------------------------------------------------- |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in credentials (required, or configure the Google provider in PocketBase) |
-
-Register each origin you use as an authorized JavaScript origin of the Google OAuth
-client, and `<origin>/api/oauth2-redirect` as a redirect URI:
-
-- `http://127.0.0.1:8091` for `make up` locally, and also for `make dev` (the browser
-  talks to PocketBase directly in dev, so the redirect is on 8091)
-- your public origin, e.g. `https://dogear.example.com`, when served through a tunnel
-
-PocketBase applies migrations on startup and stores data in `backend/pb_data/`.
-Its admin dashboard is at http://127.0.0.1:8091/_/.
+For Google login, enable Google under PocketBase > users > Options > OAuth2 and
+enter your client ID and secret (or export `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET` before starting; `.env` files are not loaded).
+In the Google OAuth client, add origins `http://127.0.0.1:5174` and
+`http://127.0.0.1:8091`, with redirect URI
+`http://127.0.0.1:8091/api/oauth2-redirect`. If using `localhost:8091`, also register
+origin `http://localhost:8091` and redirect
+`http://localhost:8091/api/oauth2-redirect`; Google requires an exact host match.
+Keep the production origin `https://dog-ear.app` and redirect
+`https://dog-ear.app/api/oauth2-redirect` registered too.
 
 ## Run
 

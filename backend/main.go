@@ -59,6 +59,13 @@ func register(app core.App) {
 		return apis.NewForbiddenError("Email changes are not supported", nil)
 	})
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
+		// Replace PocketBase's wildcard CORS with the public and local app origins.
+		se.Router.Unbind(apis.DefaultCorsMiddlewareId)
+		se.Router.Bind(apis.CORS(apis.CORSConfig{AllowOrigins: []string{
+			"https://dog-ear.app",
+			"http://127.0.0.1:8091", "http://localhost:8091",
+			"http://127.0.0.1:5174", "http://localhost:5174",
+		}}))
 		se.Router.GET("/api/dogear/config", func(e *core.RequestEvent) error {
 			c, err := app.FindCollectionByNameOrId("users")
 			if err != nil {
