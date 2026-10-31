@@ -49,8 +49,10 @@ and author) when it is free.
 
 Shelf books record the month you started and finished them. Moving a book to
 "reading" from any other status stamps this month as the start and clears the
-finish (so a re-read starts over); finishing stamps the finish month if it has
-none; "want to read" clears both. Explicit `started` / `finished` values from the
+finish (so a re-read starts over). Finishing a book you were reading, or posting
+that you finished it, stamps the finish month if it has none. Adding a book as
+already finished, or moving it straight from "want to read" to finished, leaves
+both months blank, since you may not remember them. "Want to read" clears both. Explicit `started` / `finished` values from the
 share dialog, add-book dialog or "Edit dates" then override (`""` clears one). Months
 cannot be in the future and the finish cannot precede the start. Posts show the
 author's months for that book.

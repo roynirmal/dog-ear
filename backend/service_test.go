@@ -513,6 +513,31 @@ func TestReadingMonthsFollowStatusAndCanBeEdited(t *testing.T) {
 		t.Fatal("clearing the start month failed", b)
 	}
 
+	// An already-finished book needs no dates; you may not remember them.
+	s = call(t, app, maya, "shelf-add", Input{Book: book("Rebecca"), Status: "finished"})
+	if b := shelf(s, "Rebecca"); b.Started != "" || b.Finished != "" {
+		t.Fatal("adding a finished book should leave its months blank", b)
+	}
+	s = call(t, app, maya, "shelf-add", Input{Book: book("Middlemarch"), Status: "want"})
+	s = call(t, app, maya, "shelf-update", Input{ID: shelf(s, "Middlemarch").ID, Status: "finished"})
+	if b := shelf(s, "Middlemarch"); b.Finished != "" {
+		t.Fatal("want to finished should not guess a finish month", b)
+	}
+	s = call(t, app, maya, "shelf-add", Input{Book: book("Ulysses"), Status: "reading"})
+	s = call(t, app, maya, "shelf-update", Input{ID: shelf(s, "Ulysses").ID, Status: "finished"})
+	if b := shelf(s, "Ulysses"); b.Started != now || b.Finished != now {
+		t.Fatal("finishing a book you were reading should stamp the finish", b)
+	}
+	s = call(t, app, maya, "post", Input{Book: book("Persuasion"), Status: "finished"})
+	if b := shelf(s, "Persuasion"); b.Finished != now || b.Started != "" {
+		t.Fatal("sharing that you finished a book should stamp the finish", b)
+	}
+	old := ""
+	s = call(t, app, maya, "post", Input{Book: book("Beloved"), Status: "finished", Finished: &old})
+	if b := shelf(s, "Beloved"); b.Finished != "" {
+		t.Fatal("a shared finished book with the month cleared should stay blank", b)
+	}
+
 	// Finishing straight away can record both months; re-reading starts over.
 	s = call(t, app, maya, "shelf-add", Input{Book: book("Emma"), Status: "finished", Started: str("2025-06"), Finished: str("2025-08")})
 	if b := shelf(s, "Emma"); b.Started != "2025-06" || b.Finished != "2025-08" {

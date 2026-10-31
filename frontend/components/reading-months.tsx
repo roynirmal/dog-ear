@@ -17,12 +17,15 @@ export function ReadingMonthFields({
   status,
   started,
   finished,
+  hint,
   onChange,
 }: {
   id: string
   status: ShelfStatus
   started: string
   finished: string
+  /** Shown under the fields, e.g. that blank is fine. */
+  hint?: string
   onChange: (months: { started: string; finished: string }) => void
 }) {
   if (status === 'want') return null
@@ -47,7 +50,9 @@ export function ReadingMonthFields({
         </div>
         {status === 'finished' ? (
           <div className="flex min-w-0 flex-col gap-2">
-            <Label htmlFor={`${id}-finished`}>Finished</Label>
+            <Label htmlFor={`${id}-finished`}>
+              Finished <span className="font-normal text-muted-foreground">(optional)</span>
+            </Label>
             <Input
               id={`${id}-finished`}
               type="month"
@@ -61,7 +66,11 @@ export function ReadingMonthFields({
           </div>
         ) : null}
       </div>
-      {invalid ? <p className="text-sm text-destructive">The finish month is before the start month.</p> : null}
+      {invalid ? (
+        <p className="text-sm text-destructive">The finish month is before the start month.</p>
+      ) : hint ? (
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      ) : null}
     </div>
   )
 }

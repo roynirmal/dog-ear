@@ -30,11 +30,11 @@ export function AddBookDialog({
   const [started, setStarted] = useState('')
   const [finished, setFinished] = useState('')
 
-  // A book you're reading started this month unless you say otherwise; for a
-  // finished one only the finish month is suggested.
+  // A book you're reading started this month unless you say otherwise. A book
+  // you already finished starts blank: you may not remember when you read it.
   useEffect(() => {
     setStarted(status === 'reading' ? thisMonth() : '')
-    setFinished(status === 'finished' ? thisMonth() : '')
+    setFinished('')
   }, [status])
 
   useEffect(() => {
@@ -72,12 +72,19 @@ export function AddBookDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex min-w-0 flex-col gap-4">
           <BookPicker id="shelf-book" value={book} onChange={setBook} />
-          <FilterChips label="Shelf" value={status} onChange={setStatus} options={shelfStatusOptions} />
+          <FilterChips
+            label="Shelf"
+            wrap
+            value={status}
+            onChange={setStatus}
+            options={shelfStatusOptions.map((o) => (o.value === 'finished' ? { ...o, label: 'Already finished' } : o))}
+          />
           <ReadingMonthFields
             id="shelf-months"
             status={status}
             started={started}
             finished={finished}
+            hint={status === 'finished' ? 'Leave these blank if you don’t remember.' : undefined}
             onChange={(m) => {
               setStarted(m.started)
               setFinished(m.finished)
