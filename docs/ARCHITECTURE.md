@@ -79,7 +79,7 @@ on-focus refresh picks up friends' changes.
 | `state` | `{}` | |
 | `befriend` | `code` | Creates a mutual friendship; own code or repeat is a no-op |
 | `unfriend` | `id` | Either side; loans between you remain visible |
-| `friend-request` | `id` (user) | Requires a mutual friend; asking someone who asked you accepts; repeats and declined requests are quiet no-ops |
+| `friend-request` | `id` (user) or `email` | By `id`, requires a mutual friend; by exact `email`, no mutual friend needed. Asking someone who asked you accepts; repeats and declined requests are quiet no-ops |
 | `friend-respond` | `id, accept` | Recipient only |
 | `shelf-add` | `book, status, lendable?, started?, finished?` | Upserts by Open Library key or case-insensitive title+author |
 | `shelf-update` | `id, status?, lendable?, started?, finished?` | Owner only |
@@ -97,8 +97,19 @@ on-focus refresh picks up friends' changes.
 | `loan-delete` | `id` | Whoever logged it |
 | `notifications-read` | `{}` | Marks your notifications read |
 
-`GET /api/dogear/search?q=` (authenticated) proxies Open Library's search with an
-identifying User-Agent, a 10-second timeout and a 1-hour in-memory cache.
+`GET /api/dogear/search?q=` (authenticated) searches Open Library and Google Books
+in parallel, with an identifying User-Agent, a 10-second timeout and a 1-hour
+in-memory cache of complete answers. Open Library results come first; Google Books
+adds titles it lacks (often self-published or Kindle-only), matched by title and
+first author. Either source may fail without failing the search. Google Books uses
+`GOOGLE_BOOKS_API_KEY` when set, otherwise Google's small shared anonymous quota.
+Google results carry `olKey: "gb:<volume id>"` and a `coverUrl` thumbnail; cover
+URLs are only accepted from `books.google.com` / `books.googleusercontent.com` over
+HTTPS. Books in neither catalogue are entered by hand.
+
+`GET /api/dogear/people?email=` (authenticated) looks up a verified account by exact,
+case-insensitive email and returns only `{id, name, relation}` (self, friend, sent,
+incoming, none), or 404.
 `GET /api/dogear/config` is public and reports only whether Google sign-in is set up.
 
 Unknown JSON fields are rejected; bodies are limited to 64 KiB. Text limits: title

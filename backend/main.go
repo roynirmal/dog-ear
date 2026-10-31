@@ -80,6 +80,16 @@ func register(app core.App) {
 			}
 			return e.JSON(200, books)
 		}).Bind(apis.RequireAuth("users"))
+		se.Router.GET("/api/dogear/people", func(e *core.RequestEvent) error {
+			found, err := findPerson(app, e.Auth, e.Request.URL.Query().Get("email"))
+			if errors.Is(err, ErrNotFound) {
+				return apis.NewNotFoundError("No one with that email is on Dog-ear yet", nil)
+			}
+			if err != nil {
+				return apiError(err)
+			}
+			return e.JSON(200, found)
+		}).Bind(apis.RequireAuth("users"))
 		se.Router.POST("/api/dogear/{action}", func(e *core.RequestEvent) error {
 			var in Input
 			if err := readBody(e, &in, 64*1024); err != nil {

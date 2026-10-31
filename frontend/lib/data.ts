@@ -3,8 +3,12 @@ export type CoverTone = 1 | 2 | 3 | 4 | 5
 export type Book = {
   title: string
   author: string
+  /** Catalogue key: an Open Library work ("/works/…") or a Google Books volume ("gb:…"). */
   olKey?: string
+  /** Open Library cover ID. */
   coverId?: number
+  /** Google Books thumbnail, for books Open Library lacks. */
+  coverUrl?: string
   year?: number
 }
 
@@ -154,7 +158,8 @@ export function toneFor(key: string): CoverTone {
 }
 
 export function coverUrl(book: Book, size: 'S' | 'M' | 'L' = 'M') {
-  return book.coverId ? `https://covers.openlibrary.org/b/id/${book.coverId}-${size}.jpg` : undefined
+  if (book.coverId) return `https://covers.openlibrary.org/b/id/${book.coverId}-${size}.jpg`
+  return book.coverUrl || undefined
 }
 
 export function firstName(name: string) {

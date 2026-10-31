@@ -35,6 +35,9 @@ describe('covers and tones', () => {
   it('uses Open Library covers only when a cover ID exists', () => {
     expect(coverUrl({ title: 'A', author: '' })).toBeUndefined()
     expect(coverUrl({ title: 'A', author: '', coverId: 42 }, 'S')).toBe('https://covers.openlibrary.org/b/id/42-S.jpg')
+    const google = 'https://books.google.com/books/content?id=abc&img=1&zoom=1'
+    expect(coverUrl({ title: 'A', author: '', coverUrl: google })).toBe(google)
+    expect(coverUrl({ title: 'A', author: '', coverId: 42, coverUrl: google }, 'S')).toContain('openlibrary')
   })
   it('gives a stable tone between 1 and 5', () => {
     expect(toneFor('Piranesi')).toBe(toneFor('Piranesi'))

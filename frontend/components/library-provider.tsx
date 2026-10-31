@@ -63,6 +63,8 @@ type LibraryContextValue = LibraryState & {
   befriend: (code: string) => Promise<void>
   unfriend: (friendId: string) => Promise<void>
   sendFriendRequest: (userId: string) => Promise<void>
+  /** Sends a request to whoever has this exact email; no mutual friend needed. */
+  sendFriendRequestByEmail: (email: string) => Promise<void>
   respondToFriendRequest: (requestId: string, accept: boolean) => Promise<void>
   markNotificationsRead: () => Promise<void>
 }
@@ -140,6 +142,7 @@ export function LibraryProvider({
       befriend: (code) => run('befriend', { code }),
       unfriend: (id) => run('unfriend', { id }),
       sendFriendRequest: (id) => run('friend-request', { id }),
+      sendFriendRequestByEmail: (email) => run('friend-request', { email }),
       respondToFriendRequest: (id, accept) => run('friend-respond', { id, accept }),
       markNotificationsRead: () => run('notifications-read'),
     }

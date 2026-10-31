@@ -447,6 +447,11 @@ func TestOpenLibrarySearchIsMappedAndCached(t *testing.T) {
 	old := openLibraryBase
 	openLibraryBase = server.URL
 	defer func() { openLibraryBase = old }()
+	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{}`)) }))
+	defer empty.Close()
+	oldGB := googleBooksBase
+	googleBooksBase = empty.URL
+	defer func() { googleBooksBase = oldGB }()
 
 	books, err := searchBooks(context.Background(), "  Piranesi ")
 	if err != nil || len(books) != 1 || books[0].Author != "Susanna Clarke" || books[0].CoverID != 10 || books[0].Year != 2020 {
@@ -550,5 +555,136 @@ func TestReadingMonthsFollowStatusAndCanBeEdited(t *testing.T) {
 	s = call(t, app, maya, "shelf-update", Input{ID: shelf(s, "Emma").ID, Status: "want"})
 	if b := shelf(s, "Emma"); b.Started != "" || b.Finished != "" {
 		t.Fatal("want to read should clear dates", b)
+	}
+}
+
+func TestBookSearchAddsGoogleBooksAndSurvivesOneSource(t *testing.T) {
+	searchCache.Lock()
+	searchCache.m = map[string]searchEntry{}
+	searchCache.Unlock()
+	ol := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"docs": []map[string]any{
+			{"key": "/works/OL1W", "title": "Fool Me Twice", "author_name": []string{"Meredith Duran"}, "cover_i": 7, "first_publish_year": 2014},
+		}})
+	}))
+	defer ol.Close()
+	gbDown := false
+	gb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if gbDown {
+			http.Error(w, "quota", 429)
+			return
+		}
+		if r.URL.Query().Get("printType") != "books" {
+			t.Errorf("unexpected Google Books query %s", r.URL)
+		}
+		w.Write([]byte(`{"items":[
+			{"id":"dup","volumeInfo":{"title":"Fool Me Twice","authors":["Meredith Duran"],"publishedDate":"2014-04-29"}},
+			{"id":"abc123","volumeInfo":{"title":"Fool Me Twice","authors":["Nona Uppal"],"publishedDate":"2024-02-14",
+				"imageLinks":{"thumbnail":"http://books.google.com/books/content?id=abc123&printsec=frontcover&img=1&zoom=1&edge=curl"}}},
+			{"id":"evil","volumeInfo":{"title":"Tracker","authors":["X"],"imageLinks":{"thumbnail":"https://evil.example/pixel.gif"}}}
+		]}`))
+	}))
+	defer gb.Close()
+	oldOL, oldGB := openLibraryBase, googleBooksBase
+	openLibraryBase, googleBooksBase = ol.URL, gb.URL
+	defer func() { openLibraryBase, googleBooksBase = oldOL, oldGB }()
+
+	books, err := searchBooks(context.Background(), "fool me twice")
+	if err != nil || len(books) != 2 {
+		t.Fatal("expected Open Library result plus one new Google Books result", books, err)
+	}
+	if books[0].OLKey != "/works/OL1W" || books[1].Author != "Nona Uppal" || books[1].OLKey != "gb:abc123" || books[1].Year != 2024 {
+		t.Fatal("merge order or mapping wrong", books)
+	}
+	if books[1].CoverURL != "https://books.google.com/books/content?id=abc123&printsec=frontcover&img=1&zoom=1" {
+		t.Fatal("cover not upgraded to https or curl not removed", books[1].CoverURL)
+	}
+
+	// One source failing still returns the other, and is not cached.
+	gbDown = true
+	books, err = searchBooks(context.Background(), "something else")
+	if err != nil || len(books) != 1 {
+		t.Fatal("search should survive Google Books failing", books, err)
+	}
+	searchCache.Lock()
+	_, cached := searchCache.m["something else"]
+	searchCache.Unlock()
+	if cached {
+		t.Fatal("partial results must not be cached")
+	}
+	ol.Close()
+	if _, err := searchBooks(context.Background(), "a third search"); err == nil {
+		t.Fatal("both sources down should be an error")
+	}
+}
+
+func TestCoverURLsAreRestrictedAndStored(t *testing.T) {
+	app := testApp(t)
+	maya := testUser(t, app, "maya@example.com", true)
+	for _, bad := range []string{"https://evil.example/x.jpg", "http://books.google.com/x", "javascript:alert(1)"} {
+		if _, err := execute(app, maya, "shelf-add", Input{Book: &Book{Title: "X", CoverURL: bad}, Status: "want"}); err == nil {
+			t.Fatal("accepted cover", bad)
+		}
+	}
+	cover := "https://books.google.com/books/content?id=abc123&img=1&zoom=1"
+	s := call(t, app, maya, "shelf-add", Input{Book: &Book{Title: "Fool Me Twice", Author: "Nona Uppal", OLKey: "gb:abc123", CoverURL: cover}, Status: "finished"})
+	if s.Shelf[0].CoverURL != cover || s.Shelf[0].OLKey != "gb:abc123" {
+		t.Fatal("Google Books cover not stored on the shelf", s.Shelf[0])
+	}
+}
+
+func TestFindFriendByEmail(t *testing.T) {
+	app := testApp(t)
+	maya := testUser(t, app, "maya@example.com", true)
+	theo := testUser(t, app, "Theo@Example.com", true)
+	testUser(t, app, "pending@example.com", false)
+
+	if _, err := findPerson(app, maya, "nobody@example.com"); !errors.Is(err, ErrNotFound) {
+		t.Fatal("unknown email", err)
+	}
+	if _, err := findPerson(app, maya, "pending@example.com"); !errors.Is(err, ErrNotFound) {
+		t.Fatal("unverified account should not be findable", err)
+	}
+	if _, err := findPerson(app, maya, "not an email"); err == nil || errors.Is(err, ErrNotFound) {
+		t.Fatal("malformed email should be a validation error", err)
+	}
+	found, err := findPerson(app, maya, "  theo@EXAMPLE.com ")
+	if err != nil || found.ID != theo.Id || found.Name != "Theo" || found.Relation != "none" {
+		t.Fatal("case-insensitive lookup failed", found, err)
+	}
+	if f, _ := findPerson(app, maya, "maya@example.com"); f.Relation != "self" {
+		t.Fatal("own email should read as self", f)
+	}
+	if _, err := execute(app, maya, "friend-request", Input{Email: "maya@example.com"}); err == nil {
+		t.Fatal("befriended self")
+	}
+
+	// No mutual friend needed when you know the email.
+	if _, err := execute(app, maya, "friend-request", Input{ID: theo.Id}); !errors.Is(err, ErrNotFound) {
+		t.Fatal("ID-only request without a mutual friend should fail", err)
+	}
+	s := call(t, app, maya, "friend-request", Input{Email: "THEO@example.com"})
+	if len(s.SentRequests) != 1 || s.SentRequests[0] != theo.Id {
+		t.Fatal("request by email not sent", s.SentRequests)
+	}
+	named := false
+	for _, p := range s.People {
+		named = named || (p.ID == theo.Id && p.Name == "Theo")
+	}
+	if !named {
+		t.Fatal("people should include who you asked, to show their name")
+	}
+	if f, _ := findPerson(app, maya, "theo@example.com"); f.Relation != "sent" {
+		t.Fatal("expected sent", f)
+	}
+	if f, _ := findPerson(app, theo, "maya@example.com"); f.Relation != "incoming" {
+		t.Fatal("expected incoming", f)
+	}
+	ts := call(t, app, theo, "friend-respond", Input{ID: call(t, app, theo, "state", Input{}).FriendRequests[0].ID, Accept: true})
+	if len(ts.Friends) != 1 {
+		t.Fatal("accept failed")
+	}
+	if f, _ := findPerson(app, maya, "theo@example.com"); f.Relation != "friend" {
+		t.Fatal("expected friend", f)
 	}
 }

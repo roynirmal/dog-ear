@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"errors"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -29,19 +30,30 @@ const (
 
 var shelfStatuses = map[string]bool{"want": true, "reading": true, "finished": true}
 
+// Book is a catalogue entry. OLKey is the catalogue key: an Open Library work
+// key ("/works/OL…W") or a Google Books volume ("gb:…"). CoverID is an Open
+// Library cover; CoverURL a Google Books thumbnail.
 type Book struct {
-	Title   string `json:"title"`
-	Author  string `json:"author"`
-	OLKey   string `json:"olKey,omitempty"`
-	CoverID int    `json:"coverId,omitempty"`
-	Year    int    `json:"year,omitempty"`
+	Title    string `json:"title"`
+	Author   string `json:"author"`
+	OLKey    string `json:"olKey,omitempty"`
+	CoverID  int    `json:"coverId,omitempty"`
+	CoverURL string `json:"coverUrl,omitempty"`
+	Year     int    `json:"year,omitempty"`
 }
+
+const googleKeyPrefix = "gb:"
+
+// Covers are shown from these hosts only, so a crafted book cannot make every
+// friend's browser load an arbitrary URL.
+var coverHosts = map[string]bool{"books.google.com": true, "books.googleusercontent.com": true}
 
 type Input struct {
 	ID        string   `json:"id"`
 	BookID    string   `json:"bookId"`
 	ShelfBook string   `json:"shelfBook"`
 	Code      string   `json:"code"`
+	Email     string   `json:"email"`
 	Book      *Book    `json:"book"`
 	Status    string   `json:"status"`
 	Lendable  *bool    `json:"lendable"`
@@ -104,6 +116,12 @@ func cleanBook(b *Book) (Book, error) {
 	}
 	if out.CoverID < 0 || out.Year < 0 || out.Year > 3000 {
 		return out, errors.New("invalid book details")
+	}
+	if out.CoverURL != "" {
+		u, err := url.Parse(out.CoverURL)
+		if err != nil || u.Scheme != "https" || !coverHosts[u.Hostname()] || len(out.CoverURL) > 500 {
+			return out, errors.New("invalid cover image")
+		}
 	}
 	return out, nil
 }
@@ -217,6 +235,56 @@ func haveMutualFriend(app core.App, x, y string) (bool, error) {
 	return false, nil
 }
 
+func normalizeEmail(email string) string { return strings.ToLower(strings.TrimSpace(email)) }
+
+// userByEmail finds a verified account by exact (case-insensitive) email.
+func userByEmail(app core.App, email string) *core.Record {
+	email = normalizeEmail(email)
+	if email == "" || len(email) > 254 || !strings.Contains(email, "@") {
+		return nil
+	}
+	rs, err := app.FindAllRecords("users", dbx.NewExp("LOWER(email) = {:e}", dbx.Params{"e": email}))
+	if err != nil || len(rs) != 1 || !rs[0].Verified() {
+		return nil
+	}
+	return rs[0]
+}
+
+// FoundPerson answers "is this email on Dog-ear?" with only a name and how you
+// are connected.
+type FoundPerson struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Relation string `json:"relation"` // self, friend, sent, incoming, none
+}
+
+func findPerson(app core.App, u *core.Record, email string) (*FoundPerson, error) {
+	if u == nil || u.Collection().Name != "users" || !u.Verified() {
+		return nil, ErrAccess
+	}
+	if !strings.Contains(normalizeEmail(email), "@") {
+		return nil, errors.New("enter an email address")
+	}
+	other := userByEmail(app, email)
+	if other == nil {
+		return nil, ErrNotFound
+	}
+	found := &FoundPerson{ID: other.Id, Name: displayName(other), Relation: "none"}
+	switch {
+	case other.Id == u.Id:
+		found.Relation = "self"
+	case areFriends(app, u.Id, other.Id):
+		found.Relation = "friend"
+	default:
+		if rs, _ := app.FindAllRecords("friend_requests", dbx.HashExp{"from": other.Id, "to": u.Id, "status": "pending"}); len(rs) > 0 {
+			found.Relation = "incoming"
+		} else if rs, _ := app.FindAllRecords("friend_requests", dbx.HashExp{"from": u.Id, "to": other.Id}); len(rs) > 0 {
+			found.Relation = "sent"
+		}
+	}
+	return found, nil
+}
+
 func makeFriends(app core.App, x, y string) error {
 	if x == y {
 		return nil
@@ -288,7 +356,7 @@ func decodeBook(r *core.Record) Book {
 }
 
 func shelfBookOf(r *core.Record) Book {
-	return Book{r.GetString("title"), r.GetString("author"), r.GetString("olKey"), r.GetInt("coverId"), r.GetInt("year")}
+	return Book{r.GetString("title"), r.GetString("author"), r.GetString("olKey"), r.GetInt("coverId"), r.GetString("coverUrl"), r.GetInt("year")}
 }
 
 func newRecord(app core.App, collection string) (*core.Record, error) {
@@ -401,6 +469,7 @@ func upsertShelf(app core.App, uid string, b Book, status string, lendable *bool
 		r.Set("author", b.Author)
 		r.Set("olKey", b.OLKey)
 		r.Set("coverId", b.CoverID)
+		r.Set("coverUrl", b.CoverURL)
 		r.Set("year", b.Year)
 		r.Set("lendable", status != "want")
 	}
@@ -526,19 +595,31 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		return app.Delete(r)
 
 	case "friend-request":
-		other, err := find(app, "users", in.ID)
-		if err != nil || other.Id == uid {
-			return ErrNotFound
+		// Either someone you came across (a mutual friend required) or someone
+		// whose exact email you know.
+		var other *core.Record
+		if in.Email != "" {
+			if other = userByEmail(app, in.Email); other == nil {
+				return ErrNotFound
+			}
+		} else {
+			var err error
+			if other, err = find(app, "users", in.ID); err != nil {
+				return ErrNotFound
+			}
+			mutual, err := haveMutualFriend(app, uid, other.Id)
+			if err != nil {
+				return err
+			}
+			if !mutual && !areFriends(app, uid, other.Id) {
+				return ErrNotFound
+			}
+		}
+		if other.Id == uid {
+			return errors.New("that’s your own email")
 		}
 		if areFriends(app, uid, other.Id) {
 			return nil
-		}
-		mutual, err := haveMutualFriend(app, uid, other.Id)
-		if err != nil {
-			return err
-		}
-		if !mutual {
-			return ErrNotFound
 		}
 		// They already asked you: asking back is accepting.
 		reverse, err := app.FindAllRecords("friend_requests", dbx.HashExp{"from": other.Id, "to": uid, "status": "pending"})

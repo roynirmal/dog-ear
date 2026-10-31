@@ -286,6 +286,7 @@ func load(app core.App, u *core.Record) (*State, error) {
 	}
 	for _, r := range sent {
 		s.SentRequests = append(s.SentRequests, r.GetString("to"))
+		people[r.GetString("to")] = true
 	}
 
 	loans, err := app.FindAllRecords("loans", dbx.Or(dbx.HashExp{"lender": uid}, dbx.HashExp{"borrower": uid}))
