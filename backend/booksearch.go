@@ -25,7 +25,8 @@ var searchClient = &http.Client{Timeout: 10 * time.Second}
 
 const (
 	searchCacheSize = 200
-	searchLimit     = 12
+	searchLimit     = 12 // per catalogue
+	mergedLimit     = 16
 	userAgent       = "Dog-ear/0.1 (self-hosted reading app)"
 )
 
@@ -78,8 +79,10 @@ func searchBooks(ctx context.Context, query string) ([]Book, error) {
 	return books, nil
 }
 
-// mergeResults keeps Open Library's order and adds Google Books titles it did
-// not already return, up to the result limit.
+// mergeResults alternates between the two catalogues so each one's best
+// matches appear near the top, dropping duplicates (same title and first
+// author) and stopping at the merged limit. A common title can fill one
+// catalogue's whole page with other books, so appending would hide the other's.
 func mergeResults(primary, extra []Book) []Book {
 	books := []Book{}
 	seen := map[string]bool{}
@@ -87,14 +90,18 @@ func mergeResults(primary, extra []Book) []Book {
 		author, _, _ := strings.Cut(b.Author, ",")
 		return strings.ToLower(strings.TrimSpace(b.Title)) + "|" + strings.ToLower(strings.TrimSpace(author))
 	}
-	for _, list := range [][]Book{primary, extra} {
-		for _, b := range list {
-			k := sameBook(b)
-			if seen[k] || len(books) >= searchLimit {
-				continue
-			}
+	add := func(b Book) {
+		if k := sameBook(b); !seen[k] && len(books) < mergedLimit {
 			seen[k] = true
 			books = append(books, b)
+		}
+	}
+	for i := 0; i < len(primary) || i < len(extra); i++ {
+		if i < len(primary) {
+			add(primary[i])
+		}
+		if i < len(extra) {
+			add(extra[i])
 		}
 	}
 	return books

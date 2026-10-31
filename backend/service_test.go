@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -686,5 +687,20 @@ func TestFindFriendByEmail(t *testing.T) {
 	}
 	if f, _ := findPerson(app, maya, "theo@example.com"); f.Relation != "friend" {
 		t.Fatal("expected friend", f)
+	}
+}
+
+func TestMergeKeepsEachCataloguesTopMatches(t *testing.T) {
+	ol := []Book{}
+	for i := 0; i < searchLimit; i++ {
+		ol = append(ol, Book{Title: "Fool Me Twice", Author: fmt.Sprintf("Author %d", i)})
+	}
+	gb := []Book{{Title: "Fool Me Twice", Author: "Nona Uppal", OLKey: "gb:s_b4EAAAQBAJ"}, {Title: "Fool Me Twice", Author: "Author 0"}}
+	books := mergeResults(ol, gb)
+	if len(books) != searchLimit+1 || books[0].Author != "Author 0" || books[1].Author != "Nona Uppal" {
+		t.Fatal("Google's top match should come second, not be cut off", books[:3], len(books))
+	}
+	if len(mergeResults(append(ol, ol...), append(gb, gb...))) > mergedLimit {
+		t.Fatal("merged results exceed the limit")
 	}
 }

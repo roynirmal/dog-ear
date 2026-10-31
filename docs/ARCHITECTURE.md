@@ -99,9 +99,10 @@ on-focus refresh picks up friends' changes.
 
 `GET /api/dogear/search?q=` (authenticated) searches Open Library and Google Books
 in parallel, with an identifying User-Agent, a 10-second timeout and a 1-hour
-in-memory cache of complete answers. Open Library results come first; Google Books
-adds titles it lacks (often self-published or Kindle-only), matched by title and
-first author. Either source may fail without failing the search. Google Books uses
+in-memory cache of complete answers. Results alternate between the two catalogues
+(up to 16), dropping duplicates by title and first author, so a common title that
+fills one catalogue's page cannot hide the other's best match. Google Books covers
+many self-published and Kindle-only titles Open Library lacks. Either source may fail without failing the search. Google Books uses
 `GOOGLE_BOOKS_API_KEY` when set, otherwise Google's small shared anonymous quota.
 Google results carry `olKey: "gb:<volume id>"` and a `coverUrl` thumbnail; cover
 URLs are only accepted from `books.google.com` / `books.googleusercontent.com` over
