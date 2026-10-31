@@ -1,11 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { BookOpen, Check, ChevronRight, Copy, Share2 } from 'lucide-react'
+import { BookOpen, Check, ChevronRight, Clock, Copy, Search, Share2, UserPlus } from 'lucide-react'
 import { FriendAvatar } from '@/components/friend-avatar'
 import { useLibrary } from '@/components/library-provider'
 import { usePersonCard } from '@/components/person-card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { findPerson, type FoundPerson } from '@/lib/api'
 import { relativeTime, type FriendRequest } from '@/lib/data'
 
 export function FriendsView() {
@@ -46,6 +48,8 @@ export function FriendsView() {
           ))}
         </section>
       ) : null}
+
+      <FindByEmail />
 
       <section
         aria-labelledby="invite-heading"
@@ -172,5 +176,123 @@ function FriendRequestCard({ request }: { request: FriendRequest }) {
         Ignore
       </Button>
     </article>
+  )
+}
+
+function FindByEmail() {
+  const { friendRequests, sendFriendRequestByEmail, respondToFriendRequest } = useLibrary()
+  const openPerson = usePersonCard()
+  const [email, setEmail] = useState('')
+  const [searched, setSearched] = useState('')
+  const [found, setFound] = useState<FoundPerson | null>(null)
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function search(event: React.FormEvent) {
+    event.preventDefault()
+    const query = email.trim()
+    if (!query || busy) return
+    setBusy(true)
+    setFound(null)
+    setMessage('')
+    try {
+      setFound(await findPerson(query))
+      setSearched(query)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function act(work: () => Promise<void>, relation: FoundPerson['relation']) {
+    if (!found) return
+    setBusy(true)
+    try {
+      await work()
+      setFound({ ...found, relation })
+    } catch {
+      // The provider shows the error.
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const incoming = found ? friendRequests.find((r) => r.fromId === found.id) : undefined
+
+  return (
+    <section aria-labelledby="find-heading" className="flex flex-col gap-3 rounded-2xl border bg-card p-4">
+      <h2 id="find-heading" className="font-serif text-lg font-semibold">
+        Find a friend by email
+      </h2>
+      <form onSubmit={search} className="flex gap-2">
+        <label htmlFor="find-email" className="sr-only">
+          Their email address
+        </label>
+        <Input
+          id="find-email"
+          type="email"
+          inputMode="email"
+          autoComplete="off"
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value)
+            setMessage('')
+          }}
+          placeholder="friend@example.com"
+          className="h-11 min-w-0 flex-1 text-base"
+        />
+        <Button type="submit" className="h-11 gap-1.5 rounded-full px-4" disabled={!email.trim() || busy}>
+          <Search className="size-4" />
+          Find
+        </Button>
+      </form>
+      {message ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          {message.startsWith('No one')
+            ? `${message.replace(/\.$/, '')}. You can send them your invite link below.`
+            : message}
+        </p>
+      ) : null}
+      {found ? (
+        <div className="flex items-center gap-3 rounded-xl bg-muted/50 p-3">
+          <FriendAvatar
+            friendId={found.relation === 'friend' ? found.id : undefined}
+            name={found.relation === 'friend' ? undefined : found.name}
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-semibold">{found.relation === 'self' ? 'That’s you' : found.name}</p>
+            <p className="truncate text-xs text-muted-foreground">{searched}</p>
+          </div>
+          {found.relation === 'none' ? (
+            <Button
+              className="h-10 shrink-0 gap-1.5 rounded-full px-3"
+              disabled={busy}
+              onClick={() => act(() => sendFriendRequestByEmail(searched), 'sent')}
+            >
+              <UserPlus className="size-4" />
+              Add friend
+            </Button>
+          ) : found.relation === 'sent' ? (
+            <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground">
+              <Clock className="size-3.5" />
+              Request sent
+            </span>
+          ) : found.relation === 'incoming' && incoming ? (
+            <Button
+              className="h-10 shrink-0 rounded-full px-3"
+              disabled={busy}
+              onClick={() => act(() => respondToFriendRequest(incoming.id, true), 'friend')}
+            >
+              Accept
+            </Button>
+          ) : found.relation === 'friend' ? (
+            <Button variant="outline" className="h-10 shrink-0 rounded-full px-3" onClick={() => openPerson(found.id)}>
+              Friends
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
   )
 }

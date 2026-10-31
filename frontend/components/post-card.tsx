@@ -1,13 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { BookMarked, Check, Heart, MessageCircle, Send, Star, Trash2 } from 'lucide-react'
+import { BookMarked, CalendarDays, Check, Heart, MessageCircle, Send, Star, Trash2 } from 'lucide-react'
 import { BookCover } from '@/components/book-cover'
 import { FriendAvatar } from '@/components/friend-avatar'
 import { useLibrary } from '@/components/library-provider'
 import { PersonButton } from '@/components/person-card'
 import { Button } from '@/components/ui/button'
-import { relativeTime, type Post } from '@/lib/data'
+import { readingSpan, relativeTime, type Post } from '@/lib/data'
 import { cn } from '@/lib/utils'
 
 export function PostCard({ post }: { post: Post }) {
@@ -18,6 +18,7 @@ export function PostCard({ post }: { post: Post }) {
   const author = person(post.authorId)
   const liked = post.likedBy.includes(me.id)
   const isMine = post.authorId === me.id
+  const span = readingSpan(post.started, post.status === 'finished' ? post.finished : undefined)
 
   async function submitComment(event: React.FormEvent) {
     event.preventDefault()
@@ -63,6 +64,12 @@ export function PostCard({ post }: { post: Post }) {
         <div className="flex min-w-0 flex-1 flex-col justify-center gap-1">
           <h3 className="font-serif text-lg leading-snug font-semibold text-balance">{post.book.title}</h3>
           <p className="text-sm text-muted-foreground">{post.book.author}</p>
+          {span ? (
+            <p className="flex items-center gap-1 text-xs text-muted-foreground">
+              <CalendarDays aria-hidden="true" className="size-3.5" />
+              {span}
+            </p>
+          ) : null}
           {post.status === 'reading' && post.progress !== undefined ? (
             <div className="mt-2 flex items-center gap-2">
               <div

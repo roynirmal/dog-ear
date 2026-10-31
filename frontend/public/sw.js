@@ -1,7 +1,7 @@
 // Dog-ear service worker: makes the app installable, opens instantly and keeps
 // the shell and book covers available offline. Library data always comes from
 // the server; /api and PocketBase's /_/ pages are never cached.
-const VERSION = 'v1'
+const VERSION = 'v2'
 const SHELL = `dogear-shell-${VERSION}`
 const COVERS = `dogear-covers-${VERSION}`
 const MAX_COVERS = 300
@@ -35,8 +35,8 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return
   const url = new URL(request.url)
 
-  // Open Library covers never change for a given ID.
-  if (url.hostname === 'covers.openlibrary.org') {
+  // Book covers never change for a given ID.
+  if (url.hostname === 'covers.openlibrary.org' || url.hostname === 'books.google.com') {
     event.respondWith(
       caches.match(request).then(
         (hit) =>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, Search, X } from 'lucide-react'
+import { Loader2, PenLine, Search, X } from 'lucide-react'
 import { BookCover } from '@/components/book-cover'
 import { useLibrary } from '@/components/library-provider'
 import { Button } from '@/components/ui/button'
@@ -69,8 +69,8 @@ export function BookPicker({
   }, [manual, title, author])
 
   function choose(book: Book) {
-    const { title, author, olKey, coverId, year } = book
-    onChange({ title, author, olKey, coverId, year })
+    const { title, author, olKey, coverId, coverUrl, year } = book
+    onChange({ title, author, olKey, coverId, coverUrl, year })
     setQuery('')
     setResults([])
   }
@@ -166,19 +166,37 @@ export function BookPicker({
       ) : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {trimmed.length >= 2 && !searching && !error && results.length === 0 && shelfMatches.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No matches on Open Library.</p>
+        <p className="text-sm text-muted-foreground">No matches found.</p>
       ) : null}
-      <button
-        type="button"
-        className="self-start text-sm font-medium text-primary underline-offset-4 hover:underline"
-        onClick={() => {
-          setManual(true)
-          setTitle(trimmed)
-        }}
-      >
-        Can’t find it? Enter it yourself
-      </button>
-      <p className="text-xs text-muted-foreground">Search powered by Open Library.</p>
+      {trimmed.length >= 2 && !searching ? (
+        // Some books (often self-published or Kindle-only) are in neither catalogue.
+        <Button
+          type="button"
+          variant="outline"
+          className="h-auto min-h-11 justify-start gap-2 rounded-2xl px-4 py-2 text-left whitespace-normal"
+          onClick={() => {
+            setManual(true)
+            setTitle(trimmed)
+          }}
+        >
+          <PenLine className="size-4 shrink-0" />
+          <span>
+            {results.length + shelfMatches.length > 0 ? 'Not listed? ' : ''}Add “{trimmed}” yourself
+          </span>
+        </Button>
+      ) : (
+        <button
+          type="button"
+          className="self-start text-sm font-medium text-primary underline-offset-4 hover:underline"
+          onClick={() => {
+            setManual(true)
+            setTitle(trimmed)
+          }}
+        >
+          Can’t find it? Enter it yourself
+        </button>
+      )}
+      <p className="text-xs text-muted-foreground">Search powered by Open Library and Google Books.</p>
     </div>
   )
 }

@@ -37,6 +37,17 @@ export function searchBooks(query: string, signal?: AbortSignal) {
   return request<Book[]>(`/api/dogear/search?q=${encodeURIComponent(query)}`, { signal })
 }
 
+export type FoundPerson = {
+  id: string
+  name: string
+  relation: 'self' | 'friend' | 'sent' | 'incoming' | 'none'
+}
+
+/** Looks up a Dog-ear account by exact email. Throws "No one with that email…" when there is none. */
+export function findPerson(email: string) {
+  return request<FoundPerson>(`/api/dogear/people?email=${encodeURIComponent(email)}`)
+}
+
 export function fetchConfig() {
   return request<{ google: boolean }>('/api/dogear/config')
 }

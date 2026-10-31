@@ -3,8 +3,12 @@ export type CoverTone = 1 | 2 | 3 | 4 | 5
 export type Book = {
   title: string
   author: string
+  /** Catalogue key: an Open Library work ("/works/…") or a Google Books volume ("gb:…"). */
   olKey?: string
+  /** Open Library cover ID. */
   coverId?: number
+  /** Google Books thumbnail, for books Open Library lacks. */
+  coverUrl?: string
   year?: number
 }
 
@@ -37,6 +41,9 @@ export type Post = {
   comments: Comment[]
   /** The author's shelf copy behind this post. */
   shelfBookId?: string
+  /** The author's reading months for the book, YYYY-MM. */
+  started?: string
+  finished?: string
   /** Live: the author's copy is lendable and not on loan right now. */
   canLend: boolean
   lentOut: boolean
@@ -76,6 +83,9 @@ export type ShelfBook = Book & {
   status: ShelfStatus
   /** Friends may ask to borrow it (unless it is lent out). */
   lendable: boolean
+  /** Reading months, YYYY-MM. */
+  started?: string
+  finished?: string
   addedAt: string
 }
 
@@ -148,11 +158,37 @@ export function toneFor(key: string): CoverTone {
 }
 
 export function coverUrl(book: Book, size: 'S' | 'M' | 'L' = 'M') {
-  return book.coverId ? `https://covers.openlibrary.org/b/id/${book.coverId}-${size}.jpg` : undefined
+  if (book.coverId) return `https://covers.openlibrary.org/b/id/${book.coverId}-${size}.jpg`
+  return book.coverUrl || undefined
 }
 
 export function firstName(name: string) {
   return name.split(' ')[0]
+}
+
+/** The current month as YYYY-MM, in the reader's timezone. */
+export function thisMonth(today = new Date()) {
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+}
+
+/** "2026-03" → "Mar 2026". */
+export function monthLabel(month: string) {
+  const [year, m] = month.split('-').map(Number)
+  return new Date(year, m - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+}
+
+/** A short summary of when a book was read: "Since Mar 2026", "Mar – Oct 2026". */
+export function readingSpan(started?: string, finished?: string) {
+  if (started && finished) {
+    if (started === finished) return monthLabel(started)
+    const [sy] = started.split('-')
+    const [fy] = finished.split('-')
+    const from = sy === fy ? monthLabel(started).split(' ')[0] : monthLabel(started)
+    return `${from} – ${monthLabel(finished)}`
+  }
+  if (started) return `Since ${monthLabel(started)}`
+  if (finished) return `Finished ${monthLabel(finished)}`
+  return ''
 }
 
 /** Lowercase, de-duplicated tags from free text such as "#quotes, sci fi". */

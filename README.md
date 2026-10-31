@@ -4,12 +4,13 @@ Share what you're reading with friends, and keep track of the books you lend and
 
 - Add and manage your book collection (want to read / reading / finished), and
   choose which books friends may borrow
-- Online book search, powered by [Open Library](https://openlibrary.org)
+- Online book search, powered by [Open Library](https://openlibrary.org) and
+  [Google Books](https://books.google.com)
 - Private notes, grouped with tags and optionally linked to a book
 - A record of who you lend books to and borrow from, with due dates, nudges and history
 - See what friends are reading and their thoughts; heart, comment, and borrow from
   their lending shelf
-- Add friends by invite link or by tapping someone in the comments
+- Add friends by invite link, by email, or by tapping someone in the comments
 - One in-app notification when a friend starts reading a book
 
 Built with Next.js (static export) and PocketBase extended in Go, the same backend
@@ -66,6 +67,13 @@ covers so it opens instantly and offline; library data is never cached. Bump
 `VERSION` in `sw.js` if you change its caching rules. The service worker is only
 registered in production builds (`make up`), not in `make dev`.
 
+## Optional: Google Books key
+
+Book search also asks Google Books, which has many self-published and Kindle-only
+titles Open Library lacks. Without a key it shares Google's small anonymous quota;
+for reliable results create an API key in your Google Cloud project with the Books
+API enabled and export `GOOGLE_BOOKS_API_KEY` before starting the backend.
+
 ## Test
 
 ```sh
@@ -81,7 +89,7 @@ TypeScript check, unit tests and the static export build. CI runs the same check
 backend/schema*.go       Migrations: locked collections and users hardening
 backend/service.go       Every domain action, authorized inside one transaction
 backend/state.go         The per-user state every action returns
-backend/openlibrary.go   Cached Open Library search proxy
+backend/booksearch.go    Cached Open Library + Google Books search
 backend/main.go          HTTP routes, Google-only OAuth hook, static frontend
 frontend/app/            Next.js entry, layout, manifest
 frontend/components/     Views, dialogs and the LibraryProvider (server state)

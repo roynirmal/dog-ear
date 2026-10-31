@@ -19,7 +19,7 @@ or write them through `/api/collections/...`.
 friendships  a, b (user IDs, a < b, unique pair)       mutual; invite code or accepted request
 friend_requests  from, to, status (pending|declined), unique pair
 books        owner, title, author, olKey, coverId, year, status (want|reading|finished),
-             lendable
+             lendable, started, finished (YYYY-MM)
 notes        owner, book (own shelf book ID or ""), text, tags[]
 posts        owner, book{title, author, olKey, coverId, year}, status (reading|finished),
              progress 0-100, rating 1-5, thoughts, canLend, shelfBook
@@ -45,6 +45,18 @@ ask to borrow any that are not lent out. A copy is lent out while a loan with th
 logged by hand link the lender's matching shelf copy (by Open Library key or title
 and author) when it is free.
 
+### Reading months
+
+Shelf books record the month you started and finished them. Moving a book to
+"reading" from any other status stamps this month as the start and clears the
+finish (so a re-read starts over). Finishing a book you were reading, or posting
+that you finished it, stamps the finish month if it has none. Adding a book as
+already finished, or moving it straight from "want to read" to finished, leaves
+both months blank, since you may not remember them. "Want to read" clears both. Explicit `started` / `finished` values from the
+share dialog, add-book dialog or "Edit dates" then override (`""` clears one). Months
+cannot be in the future and the finish cannot precede the start. Posts show the
+author's months for that book.
+
 ### Notifications
 
 The only notification: when a friend posts that they are reading a book, each of
@@ -67,14 +79,14 @@ on-focus refresh picks up friends' changes.
 | `state` | `{}` | |
 | `befriend` | `code` | Creates a mutual friendship; own code or repeat is a no-op |
 | `unfriend` | `id` | Either side; loans between you remain visible |
-| `friend-request` | `id` (user) | Requires a mutual friend; asking someone who asked you accepts; repeats and declined requests are quiet no-ops |
+| `friend-request` | `id` (user) or `email` | By `id`, requires a mutual friend; by exact `email`, no mutual friend needed. Asking someone who asked you accepts; repeats and declined requests are quiet no-ops |
 | `friend-respond` | `id, accept` | Recipient only |
-| `shelf-add` | `book, status, lendable?` | Upserts by Open Library key or case-insensitive title+author |
-| `shelf-update` | `id, status?, lendable?` | Owner only |
+| `shelf-add` | `book, status, lendable?, started?, finished?` | Upserts by Open Library key or case-insensitive title+author |
+| `shelf-update` | `id, status?, lendable?, started?, finished?` | Owner only |
 | `shelf-remove` | `id` | Owner only; unlinks notes, drops pending borrow requests |
 | `note-save` | `id?, bookId?, text, tags[]` | Owner only; `bookId` must be your shelf book |
 | `note-delete` | `id` | Owner only |
-| `post` | `book, status, progress/rating, thoughts, canLend` | Upserts the shelf entry and its `lendable`; a reading post notifies friends once per book |
+| `post` | `book, status, progress/rating, thoughts, canLend, started?, finished?` | Upserts the shelf entry and its `lendable`; a reading post notifies friends once per book |
 | `post-delete` | `id` | Author only; removes likes, comments, its notifications |
 | `like` (toggle), `comment` | `id[, text]` | Post must be yours or a current friend's |
 | `request` | `id` (shelf book) | A friend's lendable copy that is not lent out; one pending request per person |
@@ -85,8 +97,20 @@ on-focus refresh picks up friends' changes.
 | `loan-delete` | `id` | Whoever logged it |
 | `notifications-read` | `{}` | Marks your notifications read |
 
-`GET /api/dogear/search?q=` (authenticated) proxies Open Library's search with an
-identifying User-Agent, a 10-second timeout and a 1-hour in-memory cache.
+`GET /api/dogear/search?q=` (authenticated) searches Open Library and Google Books
+in parallel, with an identifying User-Agent, a 10-second timeout and a 1-hour
+in-memory cache of complete answers. Results alternate between the two catalogues
+(up to 16), dropping duplicates by title and first author, so a common title that
+fills one catalogue's page cannot hide the other's best match. Google Books covers
+many self-published and Kindle-only titles Open Library lacks. Either source may fail without failing the search. Google Books uses
+`GOOGLE_BOOKS_API_KEY` when set, otherwise Google's small shared anonymous quota.
+Google results carry `olKey: "gb:<volume id>"` and a `coverUrl` thumbnail; cover
+URLs are only accepted from `books.google.com` / `books.googleusercontent.com` over
+HTTPS. Books in neither catalogue are entered by hand.
+
+`GET /api/dogear/people?email=` (authenticated) looks up a verified account by exact,
+case-insensitive email and returns only `{id, name, relation}` (self, friend, sent,
+incoming, none), or 404.
 `GET /api/dogear/config` is public and reports only whether Google sign-in is set up.
 
 Unknown JSON fields are rejected; bodies are limited to 64 KiB. Text limits: title

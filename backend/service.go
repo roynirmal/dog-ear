@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"errors"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -29,22 +30,35 @@ const (
 
 var shelfStatuses = map[string]bool{"want": true, "reading": true, "finished": true}
 
+// Book is a catalogue entry. OLKey is the catalogue key: an Open Library work
+// key ("/works/OL…W") or a Google Books volume ("gb:…"). CoverID is an Open
+// Library cover; CoverURL a Google Books thumbnail.
 type Book struct {
-	Title   string `json:"title"`
-	Author  string `json:"author"`
-	OLKey   string `json:"olKey,omitempty"`
-	CoverID int    `json:"coverId,omitempty"`
-	Year    int    `json:"year,omitempty"`
+	Title    string `json:"title"`
+	Author   string `json:"author"`
+	OLKey    string `json:"olKey,omitempty"`
+	CoverID  int    `json:"coverId,omitempty"`
+	CoverURL string `json:"coverUrl,omitempty"`
+	Year     int    `json:"year,omitempty"`
 }
+
+const googleKeyPrefix = "gb:"
+
+// Covers are shown from these hosts only, so a crafted book cannot make every
+// friend's browser load an arbitrary URL.
+var coverHosts = map[string]bool{"books.google.com": true, "books.googleusercontent.com": true}
 
 type Input struct {
 	ID        string   `json:"id"`
 	BookID    string   `json:"bookId"`
 	ShelfBook string   `json:"shelfBook"`
 	Code      string   `json:"code"`
+	Email     string   `json:"email"`
 	Book      *Book    `json:"book"`
 	Status    string   `json:"status"`
 	Lendable  *bool    `json:"lendable"`
+	Started   *string  `json:"started"`  // YYYY-MM; "" clears, absent keeps
+	Finished  *string  `json:"finished"` // YYYY-MM; "" clears, absent keeps
 	Progress  *int     `json:"progress"`
 	Rating    *int     `json:"rating"`
 	Thoughts  string   `json:"thoughts"`
@@ -102,6 +116,12 @@ func cleanBook(b *Book) (Book, error) {
 	}
 	if out.CoverID < 0 || out.Year < 0 || out.Year > 3000 {
 		return out, errors.New("invalid book details")
+	}
+	if out.CoverURL != "" {
+		u, err := url.Parse(out.CoverURL)
+		if err != nil || u.Scheme != "https" || !coverHosts[u.Hostname()] || len(out.CoverURL) > 500 {
+			return out, errors.New("invalid cover image")
+		}
 	}
 	return out, nil
 }
@@ -215,6 +235,56 @@ func haveMutualFriend(app core.App, x, y string) (bool, error) {
 	return false, nil
 }
 
+func normalizeEmail(email string) string { return strings.ToLower(strings.TrimSpace(email)) }
+
+// userByEmail finds a verified account by exact (case-insensitive) email.
+func userByEmail(app core.App, email string) *core.Record {
+	email = normalizeEmail(email)
+	if email == "" || len(email) > 254 || !strings.Contains(email, "@") {
+		return nil
+	}
+	rs, err := app.FindAllRecords("users", dbx.NewExp("LOWER(email) = {:e}", dbx.Params{"e": email}))
+	if err != nil || len(rs) != 1 || !rs[0].Verified() {
+		return nil
+	}
+	return rs[0]
+}
+
+// FoundPerson answers "is this email on Dog-ear?" with only a name and how you
+// are connected.
+type FoundPerson struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Relation string `json:"relation"` // self, friend, sent, incoming, none
+}
+
+func findPerson(app core.App, u *core.Record, email string) (*FoundPerson, error) {
+	if u == nil || u.Collection().Name != "users" || !u.Verified() {
+		return nil, ErrAccess
+	}
+	if !strings.Contains(normalizeEmail(email), "@") {
+		return nil, errors.New("enter an email address")
+	}
+	other := userByEmail(app, email)
+	if other == nil {
+		return nil, ErrNotFound
+	}
+	found := &FoundPerson{ID: other.Id, Name: displayName(other), Relation: "none"}
+	switch {
+	case other.Id == u.Id:
+		found.Relation = "self"
+	case areFriends(app, u.Id, other.Id):
+		found.Relation = "friend"
+	default:
+		if rs, _ := app.FindAllRecords("friend_requests", dbx.HashExp{"from": other.Id, "to": u.Id, "status": "pending"}); len(rs) > 0 {
+			found.Relation = "incoming"
+		} else if rs, _ := app.FindAllRecords("friend_requests", dbx.HashExp{"from": u.Id, "to": other.Id}); len(rs) > 0 {
+			found.Relation = "sent"
+		}
+	}
+	return found, nil
+}
+
 func makeFriends(app core.App, x, y string) error {
 	if x == y {
 		return nil
@@ -286,7 +356,7 @@ func decodeBook(r *core.Record) Book {
 }
 
 func shelfBookOf(r *core.Record) Book {
-	return Book{r.GetString("title"), r.GetString("author"), r.GetString("olKey"), r.GetInt("coverId"), r.GetInt("year")}
+	return Book{r.GetString("title"), r.GetString("author"), r.GetString("olKey"), r.GetInt("coverId"), r.GetString("coverUrl"), r.GetInt("year")}
 }
 
 func newRecord(app core.App, collection string) (*core.Record, error) {
@@ -314,9 +384,78 @@ func findShelf(app core.App, owner string, b Book) (*core.Record, error) {
 	return nil, nil
 }
 
+func thisMonth() string { return time.Now().UTC().Format("2006-01") }
+
+func cleanMonth(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", nil
+	}
+	t, err := time.Parse("2006-01", s)
+	if err != nil || t.Year() < 1900 {
+		return "", errors.New("months must be YYYY-MM")
+	}
+	if s > thisMonth() {
+		return "", errors.New("reading dates cannot be in the future")
+	}
+	return s, nil
+}
+
+// setStatus moves a shelf book to a status and keeps its reading dates in step:
+// starting to read (again) stamps this month as the start, and finishing a book
+// you were reading (or sharing that you just finished it) stamps the finish.
+// Marking a book finished otherwise leaves its months blank, since you may not
+// remember when you read it. "Want to read" has no dates. Explicit months then
+// override.
+func setStatus(r *core.Record, status string, started, finished *string, justFinished bool) error {
+	if !shelfStatuses[status] {
+		return errors.New("invalid shelf status")
+	}
+	prev := r.GetString("status")
+	switch status {
+	case "want":
+		r.Set("started", "")
+		r.Set("finished", "")
+	case "reading":
+		if prev != "reading" {
+			r.Set("started", thisMonth())
+		}
+		r.Set("finished", "")
+	case "finished":
+		if (prev == "reading" || justFinished) && r.GetString("finished") == "" {
+			r.Set("finished", thisMonth())
+		}
+	}
+	r.Set("status", status)
+	return setDates(r, started, finished)
+}
+
+// setDates applies explicit months the status allows and checks their order.
+func setDates(r *core.Record, started, finished *string) error {
+	status := r.GetString("status")
+	if started != nil && status != "want" {
+		m, err := cleanMonth(*started)
+		if err != nil {
+			return err
+		}
+		r.Set("started", m)
+	}
+	if finished != nil && status == "finished" {
+		m, err := cleanMonth(*finished)
+		if err != nil {
+			return err
+		}
+		r.Set("finished", m)
+	}
+	if s, f := r.GetString("started"), r.GetString("finished"); s != "" && f != "" && f < s {
+		return errors.New("the finish month is before the start month")
+	}
+	return nil
+}
+
 // upsertShelf adds or updates a shelf book. lendable nil keeps an existing
 // setting and defaults new books to lendable unless they are only wanted.
-func upsertShelf(app core.App, uid string, b Book, status string, lendable *bool) (*core.Record, error) {
+func upsertShelf(app core.App, uid string, b Book, status string, lendable *bool, started, finished *string, justFinished bool) (*core.Record, error) {
 	r, err := findShelf(app, uid, b)
 	if err != nil {
 		return nil, err
@@ -330,13 +469,16 @@ func upsertShelf(app core.App, uid string, b Book, status string, lendable *bool
 		r.Set("author", b.Author)
 		r.Set("olKey", b.OLKey)
 		r.Set("coverId", b.CoverID)
+		r.Set("coverUrl", b.CoverURL)
 		r.Set("year", b.Year)
 		r.Set("lendable", status != "want")
 	}
 	if lendable != nil {
 		r.Set("lendable", *lendable)
 	}
-	r.Set("status", status)
+	if err := setStatus(r, status, started, finished, justFinished); err != nil {
+		return nil, err
+	}
 	return r, app.Save(r)
 }
 
@@ -453,19 +595,31 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		return app.Delete(r)
 
 	case "friend-request":
-		other, err := find(app, "users", in.ID)
-		if err != nil || other.Id == uid {
-			return ErrNotFound
+		// Either someone you came across (a mutual friend required) or someone
+		// whose exact email you know.
+		var other *core.Record
+		if in.Email != "" {
+			if other = userByEmail(app, in.Email); other == nil {
+				return ErrNotFound
+			}
+		} else {
+			var err error
+			if other, err = find(app, "users", in.ID); err != nil {
+				return ErrNotFound
+			}
+			mutual, err := haveMutualFriend(app, uid, other.Id)
+			if err != nil {
+				return err
+			}
+			if !mutual && !areFriends(app, uid, other.Id) {
+				return ErrNotFound
+			}
+		}
+		if other.Id == uid {
+			return errors.New("that’s your own email")
 		}
 		if areFriends(app, uid, other.Id) {
 			return nil
-		}
-		mutual, err := haveMutualFriend(app, uid, other.Id)
-		if err != nil {
-			return err
-		}
-		if !mutual {
-			return ErrNotFound
 		}
 		// They already asked you: asking back is accepting.
 		reverse, err := app.FindAllRecords("friend_requests", dbx.HashExp{"from": other.Id, "to": uid, "status": "pending"})
@@ -507,10 +661,7 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		if err != nil {
 			return err
 		}
-		if !shelfStatuses[in.Status] {
-			return errors.New("invalid shelf status")
-		}
-		_, err = upsertShelf(app, uid, b, in.Status, in.Lendable)
+		_, err = upsertShelf(app, uid, b, in.Status, in.Lendable, in.Started, in.Finished, false)
 		return err
 
 	case "shelf-update":
@@ -518,14 +669,16 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		if err != nil {
 			return err
 		}
-		if in.Status == "" && in.Lendable == nil {
+		if in.Status == "" && in.Lendable == nil && in.Started == nil && in.Finished == nil {
 			return errors.New("nothing to update")
 		}
 		if in.Status != "" {
-			if !shelfStatuses[in.Status] {
-				return errors.New("invalid shelf status")
-			}
-			r.Set("status", in.Status)
+			err = setStatus(r, in.Status, in.Started, in.Finished, false)
+		} else {
+			err = setDates(r, in.Started, in.Finished)
+		}
+		if err != nil {
+			return err
 		}
 		if in.Lendable != nil {
 			r.Set("lendable", *in.Lendable)
@@ -622,7 +775,7 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		}
 		// A book you read belongs on your shelf; "friends can borrow my copy"
 		// is that shelf book's lending setting.
-		shelf, err := upsertShelf(app, uid, b, in.Status, &in.CanLend)
+		shelf, err := upsertShelf(app, uid, b, in.Status, &in.CanLend, in.Started, in.Finished, in.Status == "finished")
 		if err != nil {
 			return err
 		}

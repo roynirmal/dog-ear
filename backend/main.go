@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"strings"
@@ -15,6 +16,11 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 )
+
+func init() {
+	// Go does not know the web app manifest extension and would serve text/plain.
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
+}
 
 func readBody(e *core.RequestEvent, v any, limit int64) error {
 	e.Request.Body = http.MaxBytesReader(e.Response, e.Request.Body, limit)
@@ -80,6 +86,16 @@ func register(app core.App) {
 				return apiError(err)
 			}
 			return e.JSON(200, books)
+		}).Bind(apis.RequireAuth("users"))
+		se.Router.GET("/api/dogear/people", func(e *core.RequestEvent) error {
+			found, err := findPerson(app, e.Auth, e.Request.URL.Query().Get("email"))
+			if errors.Is(err, ErrNotFound) {
+				return apis.NewNotFoundError("No one with that email is on Dog-ear yet", nil)
+			}
+			if err != nil {
+				return apiError(err)
+			}
+			return e.JSON(200, found)
 		}).Bind(apis.RequireAuth("users"))
 		se.Router.POST("/api/dogear/{action}", func(e *core.RequestEvent) error {
 			var in Input
