@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"strings"
@@ -15,6 +16,11 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 )
+
+func init() {
+	// Go does not know the web app manifest extension and would serve text/plain.
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
+}
 
 func readBody(e *core.RequestEvent, v any, limit int64) error {
 	e.Request.Body = http.MaxBytesReader(e.Response, e.Request.Body, limit)
