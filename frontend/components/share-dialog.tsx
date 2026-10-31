@@ -5,11 +5,12 @@ import { Star } from 'lucide-react'
 import { BookPicker } from '@/components/book-picker'
 import { FilterChips } from '@/components/filter-chips'
 import { useLibrary } from '@/components/library-provider'
+import { monthsValid, ReadingMonthFields } from '@/components/reading-months'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import type { Book, ReadingStatus } from '@/lib/data'
+import { thisMonth, type Book, type ReadingStatus } from '@/lib/data'
 import { cn } from '@/lib/utils'
 
 export function ShareDialog({
@@ -31,19 +32,35 @@ export function ShareDialog({
   const [rating, setRating] = useState(0)
   const [thoughts, setThoughts] = useState('')
   const [canLend, setCanLend] = useState(true)
+  const [started, setStarted] = useState(thisMonth())
+  const [finished, setFinished] = useState('')
+
+  const copy = book
+    ? shelf.find((b) =>
+        book.olKey
+          ? b.olKey === book.olKey
+          : b.title.toLowerCase() === book.title.toLowerCase() && b.author.toLowerCase() === book.author.toLowerCase(),
+      )
+    : undefined
 
   // Start from the shelf copy's lending setting when the book is already there.
   useEffect(() => {
-    if (!book) return
-    const copy = shelf.find((b) =>
-      book.olKey
-        ? b.olKey === book.olKey
-        : b.title.toLowerCase() === book.title.toLowerCase() && b.author.toLowerCase() === book.author.toLowerCase(),
-    )
-    setCanLend(copy ? copy.lendable : true)
+    if (book) setCanLend(copy ? copy.lendable : true)
     // Only when the chosen book changes, not on background refreshes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [book])
+
+  // Suggest reading months from the shelf copy, defaulting to this month.
+  useEffect(() => {
+    if (status === 'reading') {
+      setStarted((copy?.status === 'reading' && copy.started) || thisMonth())
+      setFinished('')
+    } else {
+      setStarted(copy?.started ?? '')
+      setFinished((copy?.status === 'finished' && copy.finished) || thisMonth())
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [book, status])
 
   useEffect(() => {
     if (open) reset(initialBook)
@@ -60,7 +77,7 @@ export function ShareDialog({
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
-    if (!book || busy) return
+    if (!book || busy || !monthsValid(status, started, finished)) return
     setBusy(true)
     try {
       await addPost({
@@ -70,6 +87,8 @@ export function ShareDialog({
         rating: status === 'finished' && rating > 0 ? rating : undefined,
         thoughts: thoughts.trim(),
         canLend,
+        started,
+        finished: status === 'finished' ? finished : undefined,
       })
       onOpenChange(false)
       onShared()
@@ -142,6 +161,17 @@ export function ShareDialog({
             </fieldset>
           )}
 
+          <ReadingMonthFields
+            id="share-months"
+            status={status}
+            started={started}
+            finished={finished}
+            onChange={(m) => {
+              setStarted(m.started)
+              setFinished(m.finished)
+            }}
+          />
+
           <div className="flex flex-col gap-2">
             <Label htmlFor="share-thoughts">Your thoughts</Label>
             <Textarea
@@ -164,7 +194,11 @@ export function ShareDialog({
             Friends can borrow my copy
           </label>
 
-          <Button type="submit" className="h-12 rounded-full text-base" disabled={!book || busy}>
+          <Button
+            type="submit"
+            className="h-12 rounded-full text-base"
+            disabled={!book || busy || !monthsValid(status, started, finished)}
+          >
             {busy ? 'Sharing…' : 'Share with friends'}
           </Button>
         </form>

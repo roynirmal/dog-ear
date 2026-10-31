@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { coverUrl, daysUntil, isOverdue, parseTags, toneFor, type Loan } from './data'
+import { coverUrl, daysUntil, isOverdue, parseTags, readingSpan, thisMonth, toneFor, type Loan } from './data'
 
 describe('parseTags', () => {
   it('normalizes, de-duplicates and hyphenates', () => {
@@ -39,5 +39,19 @@ describe('covers and tones', () => {
   it('gives a stable tone between 1 and 5', () => {
     expect(toneFor('Piranesi')).toBe(toneFor('Piranesi'))
     for (const key of ['a', 'bb', 'ccc', 'dddd', 'eeeee']) expect(toneFor(key)).toBeGreaterThanOrEqual(1)
+  })
+})
+
+describe('reading months', () => {
+  it('formats this month as YYYY-MM', () => {
+    expect(thisMonth(new Date(2026, 0, 31))).toBe('2026-01')
+  })
+  it('summarizes a read', () => {
+    expect(readingSpan('2026-03')).toBe('Since Mar 2026')
+    expect(readingSpan('2026-03', '2026-10')).toBe('Mar – Oct 2026')
+    expect(readingSpan('2025-11', '2026-02')).toBe('Nov 2025 – Feb 2026')
+    expect(readingSpan('2026-05', '2026-05')).toBe('May 2026')
+    expect(readingSpan(undefined, '2026-05')).toBe('Finished May 2026')
+    expect(readingSpan()).toBe('')
   })
 })

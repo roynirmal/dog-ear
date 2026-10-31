@@ -31,6 +31,9 @@ type Post struct {
 	LikedBy     []string  `json:"likedBy"`
 	Comments    []Comment `json:"comments"`
 	ShelfBookID string    `json:"shelfBookId,omitempty"`
+	// Started and Finished are the author's reading months for the book.
+	Started  string `json:"started,omitempty"`
+	Finished string `json:"finished,omitempty"`
 	// CanLend is live: the author's copy is lendable and not on loan.
 	CanLend   bool `json:"canLend"`
 	LentOut   bool `json:"lentOut"`
@@ -61,6 +64,8 @@ type ShelfBook struct {
 	ID       string `json:"id"`
 	Status   string `json:"status"`
 	Lendable bool   `json:"lendable"`
+	Started  string `json:"started,omitempty"`
+	Finished string `json:"finished,omitempty"`
 	AddedAt  string `json:"addedAt"`
 }
 
@@ -208,6 +213,9 @@ func load(app core.App, u *core.Record) (*State, error) {
 		} else if rating := p.GetInt("rating"); rating > 0 {
 			view.Rating = &rating
 		}
+		if b := books[view.ShelfBookID]; b != nil {
+			view.Started, view.Finished = b.GetString("started"), b.GetString("finished")
+		}
 		if b := books[view.ShelfBookID]; b != nil && b.GetBool("lendable") {
 			view.LentOut = onLoan[b.Id]
 			view.CanLend = !view.LentOut
@@ -240,7 +248,8 @@ func load(app core.App, u *core.Record) (*State, error) {
 	}
 
 	for _, r := range mine {
-		s.Shelf = append(s.Shelf, ShelfBook{shelfBookOf(r), r.Id, r.GetString("status"), r.GetBool("lendable"), stamp(r, "created")})
+		s.Shelf = append(s.Shelf, ShelfBook{shelfBookOf(r), r.Id, r.GetString("status"), r.GetBool("lendable"),
+			r.GetString("started"), r.GetString("finished"), stamp(r, "created")})
 	}
 	sort.Slice(s.Shelf, func(i, j int) bool { return s.Shelf[i].AddedAt > s.Shelf[j].AddedAt })
 	for _, r := range library {

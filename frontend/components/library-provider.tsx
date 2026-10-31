@@ -11,7 +11,13 @@ type NewPost = {
   rating?: number
   thoughts: string
   canLend: boolean
+  /** YYYY-MM; omit to let the server fill in this month. */
+  started?: string
+  finished?: string
 }
+
+/** Reading months as YYYY-MM; an empty string clears one. */
+export type ReadingMonths = { started?: string; finished?: string }
 
 type NewLoan = {
   direction: LoanDirection
@@ -47,9 +53,10 @@ type LibraryContextValue = LibraryState & {
   undoReturned: (loanId: string) => Promise<void>
   nudge: (loanId: string) => Promise<void>
   deleteLoan: (loanId: string) => Promise<void>
-  addToShelf: (book: Book, status: ShelfStatus) => Promise<void>
+  addToShelf: (book: Book, status: ShelfStatus, months?: ReadingMonths) => Promise<void>
   setShelfStatus: (bookId: string, status: ShelfStatus) => Promise<void>
   setLendable: (bookId: string, lendable: boolean) => Promise<void>
+  setReadingMonths: (bookId: string, months: ReadingMonths) => Promise<void>
   removeFromShelf: (bookId: string) => Promise<void>
   saveNote: (note: NoteInput) => Promise<void>
   deleteNote: (noteId: string) => Promise<void>
@@ -123,9 +130,10 @@ export function LibraryProvider({
       undoReturned: (id) => run('unreturn', { id }),
       nudge: (id) => run('nudge', { id }),
       deleteLoan: (id) => run('loan-delete', { id }),
-      addToShelf: (book, status) => run('shelf-add', { book, status }),
+      addToShelf: (book, status, months) => run('shelf-add', { book, status, ...months }),
       setShelfStatus: (id, status) => run('shelf-update', { id, status }),
       setLendable: (id, lendable) => run('shelf-update', { id, lendable }),
+      setReadingMonths: (id, months) => run('shelf-update', { id, ...months }),
       removeFromShelf: (id) => run('shelf-remove', { id }),
       saveNote: (note) => run('note-save', note),
       deleteNote: (id) => run('note-delete', { id }),

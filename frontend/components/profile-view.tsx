@@ -4,6 +4,7 @@ import { useState } from 'react'
 import {
   ArrowLeftRight,
   BookPlus,
+  CalendarDays,
   Download,
   HandHeart,
   Lock,
@@ -19,11 +20,20 @@ import { FilterChips } from '@/components/filter-chips'
 import { FriendAvatar } from '@/components/friend-avatar'
 import { useLibrary } from '@/components/library-provider'
 import { PostCard } from '@/components/post-card'
+import { ReadingMonthsDialog } from '@/components/reading-months'
 import { useInstall } from '@/components/service-worker'
 import { Button } from '@/components/ui/button'
 import { signOut } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { firstName, relativeTime, type Book, type Note, type ShelfBook, type ShelfStatus } from '@/lib/data'
+import {
+  firstName,
+  readingSpan,
+  relativeTime,
+  type Book,
+  type Note,
+  type ShelfBook,
+  type ShelfStatus,
+} from '@/lib/data'
 
 type Section = 'shelf' | 'notes' | 'thoughts'
 
@@ -120,6 +130,7 @@ function ShelfSection({
 }) {
   const { shelf, loans, notes, person, setShelfStatus, setLendable, removeFromShelf } = useLibrary()
   const [filter, setFilter] = useState<ShelfStatus | 'all'>('all')
+  const [datesFor, setDatesFor] = useState<ShelfBook | null>(null)
   const visible = filter === 'all' ? shelf : shelf.filter((book) => book.status === filter)
 
   function lentTo(book: ShelfBook) {
@@ -209,6 +220,21 @@ function ShelfSection({
                   </span>
                 ) : null}
               </div>
+              {book.status !== 'want' ? (
+                <button
+                  type="button"
+                  onClick={() => setDatesFor(book)}
+                  className="inline-flex min-h-9 items-center gap-1.5 self-start rounded-md text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+                >
+                  <CalendarDays aria-hidden="true" className="size-4" />
+                  {readingSpan(book.started, book.status === 'finished' ? book.finished : undefined) || 'Add dates'}
+                  {book.started || book.finished ? (
+                    <span className="text-xs font-medium text-primary">
+                      Edit<span className="sr-only"> reading dates</span>
+                    </span>
+                  ) : null}
+                </button>
+              ) : null}
               <div className="-mx-2 flex flex-wrap items-center">
                 <Button variant="ghost" className="h-11 gap-1.5 px-2" onClick={() => onShare(book)}>
                   <PenLine className="size-4" />
@@ -243,6 +269,7 @@ function ShelfSection({
           {shelf.length === 0 ? 'Your shelf is empty. Add the books you own or want to read.' : 'No books here.'}
         </p>
       ) : null}
+      <ReadingMonthsDialog book={datesFor} onClose={() => setDatesFor(null)} />
     </section>
   )
 }

@@ -45,6 +45,8 @@ type Input struct {
 	Book      *Book    `json:"book"`
 	Status    string   `json:"status"`
 	Lendable  *bool    `json:"lendable"`
+	Started   *string  `json:"started"`  // YYYY-MM; "" clears, absent keeps
+	Finished  *string  `json:"finished"` // YYYY-MM; "" clears, absent keeps
 	Progress  *int     `json:"progress"`
 	Rating    *int     `json:"rating"`
 	Thoughts  string   `json:"thoughts"`
@@ -314,9 +316,75 @@ func findShelf(app core.App, owner string, b Book) (*core.Record, error) {
 	return nil, nil
 }
 
+func thisMonth() string { return time.Now().UTC().Format("2006-01") }
+
+func cleanMonth(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", nil
+	}
+	t, err := time.Parse("2006-01", s)
+	if err != nil || t.Year() < 1900 {
+		return "", errors.New("months must be YYYY-MM")
+	}
+	if s > thisMonth() {
+		return "", errors.New("reading dates cannot be in the future")
+	}
+	return s, nil
+}
+
+// setStatus moves a shelf book to a status and keeps its reading dates in step:
+// starting to read (again) stamps this month as the start, finishing stamps the
+// finish, and "want to read" has no dates. Explicit months then override.
+func setStatus(r *core.Record, status string, started, finished *string) error {
+	if !shelfStatuses[status] {
+		return errors.New("invalid shelf status")
+	}
+	prev := r.GetString("status")
+	switch status {
+	case "want":
+		r.Set("started", "")
+		r.Set("finished", "")
+	case "reading":
+		if prev != "reading" {
+			r.Set("started", thisMonth())
+		}
+		r.Set("finished", "")
+	case "finished":
+		if prev != "finished" || r.GetString("finished") == "" {
+			r.Set("finished", thisMonth())
+		}
+	}
+	r.Set("status", status)
+	return setDates(r, started, finished)
+}
+
+// setDates applies explicit months the status allows and checks their order.
+func setDates(r *core.Record, started, finished *string) error {
+	status := r.GetString("status")
+	if started != nil && status != "want" {
+		m, err := cleanMonth(*started)
+		if err != nil {
+			return err
+		}
+		r.Set("started", m)
+	}
+	if finished != nil && status == "finished" {
+		m, err := cleanMonth(*finished)
+		if err != nil {
+			return err
+		}
+		r.Set("finished", m)
+	}
+	if s, f := r.GetString("started"), r.GetString("finished"); s != "" && f != "" && f < s {
+		return errors.New("the finish month is before the start month")
+	}
+	return nil
+}
+
 // upsertShelf adds or updates a shelf book. lendable nil keeps an existing
 // setting and defaults new books to lendable unless they are only wanted.
-func upsertShelf(app core.App, uid string, b Book, status string, lendable *bool) (*core.Record, error) {
+func upsertShelf(app core.App, uid string, b Book, status string, lendable *bool, started, finished *string) (*core.Record, error) {
 	r, err := findShelf(app, uid, b)
 	if err != nil {
 		return nil, err
@@ -336,7 +404,9 @@ func upsertShelf(app core.App, uid string, b Book, status string, lendable *bool
 	if lendable != nil {
 		r.Set("lendable", *lendable)
 	}
-	r.Set("status", status)
+	if err := setStatus(r, status, started, finished); err != nil {
+		return nil, err
+	}
 	return r, app.Save(r)
 }
 
@@ -507,10 +577,7 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		if err != nil {
 			return err
 		}
-		if !shelfStatuses[in.Status] {
-			return errors.New("invalid shelf status")
-		}
-		_, err = upsertShelf(app, uid, b, in.Status, in.Lendable)
+		_, err = upsertShelf(app, uid, b, in.Status, in.Lendable, in.Started, in.Finished)
 		return err
 
 	case "shelf-update":
@@ -518,14 +585,16 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		if err != nil {
 			return err
 		}
-		if in.Status == "" && in.Lendable == nil {
+		if in.Status == "" && in.Lendable == nil && in.Started == nil && in.Finished == nil {
 			return errors.New("nothing to update")
 		}
 		if in.Status != "" {
-			if !shelfStatuses[in.Status] {
-				return errors.New("invalid shelf status")
-			}
-			r.Set("status", in.Status)
+			err = setStatus(r, in.Status, in.Started, in.Finished)
+		} else {
+			err = setDates(r, in.Started, in.Finished)
+		}
+		if err != nil {
+			return err
 		}
 		if in.Lendable != nil {
 			r.Set("lendable", *in.Lendable)
@@ -622,7 +691,7 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		}
 		// A book you read belongs on your shelf; "friends can borrow my copy"
 		// is that shelf book's lending setting.
-		shelf, err := upsertShelf(app, uid, b, in.Status, &in.CanLend)
+		shelf, err := upsertShelf(app, uid, b, in.Status, &in.CanLend, in.Started, in.Finished)
 		if err != nil {
 			return err
 		}

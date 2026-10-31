@@ -460,3 +460,70 @@ func TestOpenLibrarySearchIsMappedAndCached(t *testing.T) {
 		t.Fatal("single-character search hit Open Library")
 	}
 }
+
+func TestReadingMonthsFollowStatusAndCanBeEdited(t *testing.T) {
+	app := testApp(t)
+	maya := testUser(t, app, "maya@example.com", true)
+	theo := testUser(t, app, "theo@example.com", true)
+	befriend(t, app, maya, theo)
+	now := thisMonth()
+	str := func(s string) *string { return &s }
+	shelf := func(s *State, title string) ShelfBook {
+		for _, b := range s.Shelf {
+			if b.Title == title {
+				return b
+			}
+		}
+		t.Fatal("missing", title)
+		return ShelfBook{}
+	}
+
+	s := call(t, app, maya, "shelf-add", Input{Book: book("Dune"), Status: "want"})
+	if b := shelf(s, "Dune"); b.Started != "" || b.Finished != "" {
+		t.Fatal("want-to-read book has dates", b)
+	}
+	s = call(t, app, maya, "post", Input{Book: book("Dune"), Status: "reading", Progress: intp(5)})
+	if b := shelf(s, "Dune"); b.Started != now || b.Finished != "" || s.Posts[0].Started != now {
+		t.Fatal("starting to read should stamp this month", b, s.Posts[0])
+	}
+	id := shelf(s, "Dune").ID
+	s = call(t, app, maya, "shelf-update", Input{ID: id, Started: str("2026-01")})
+	s = call(t, app, maya, "post", Input{Book: book("Dune"), Status: "reading", Progress: intp(60)})
+	if b := shelf(s, "Dune"); b.Started != "2026-01" {
+		t.Fatal("a progress update must keep the start month", b)
+	}
+	s = call(t, app, maya, "post", Input{Book: book("Dune"), Status: "finished", Rating: intp(5)})
+	if b := shelf(s, "Dune"); b.Started != "2026-01" || b.Finished != now {
+		t.Fatal("finishing should stamp the finish month", b)
+	}
+	if ts := call(t, app, theo, "state", Input{}); ts.Posts[0].Started != "2026-01" || ts.Posts[0].Finished != now {
+		t.Fatal("friends should see the reading months on posts", ts.Posts[0])
+	}
+	if _, err := execute(app, maya, "shelf-update", Input{ID: id, Started: str("2026-02"), Finished: str("2025-12")}); err == nil {
+		t.Fatal("finish before start accepted")
+	}
+	if _, err := execute(app, maya, "shelf-update", Input{ID: id, Finished: str("2999-01")}); err == nil {
+		t.Fatal("future month accepted")
+	}
+	if _, err := execute(app, maya, "shelf-update", Input{ID: id, Started: str("Jan 2026")}); err == nil {
+		t.Fatal("bad month format accepted")
+	}
+	s = call(t, app, maya, "shelf-update", Input{ID: id, Started: str("")})
+	if b := shelf(s, "Dune"); b.Started != "" || b.Finished != now {
+		t.Fatal("clearing the start month failed", b)
+	}
+
+	// Finishing straight away can record both months; re-reading starts over.
+	s = call(t, app, maya, "shelf-add", Input{Book: book("Emma"), Status: "finished", Started: str("2025-06"), Finished: str("2025-08")})
+	if b := shelf(s, "Emma"); b.Started != "2025-06" || b.Finished != "2025-08" {
+		t.Fatal("explicit months not saved", b)
+	}
+	s = call(t, app, maya, "shelf-update", Input{ID: shelf(s, "Emma").ID, Status: "reading"})
+	if b := shelf(s, "Emma"); b.Started != now || b.Finished != "" {
+		t.Fatal("re-reading should start over", b)
+	}
+	s = call(t, app, maya, "shelf-update", Input{ID: shelf(s, "Emma").ID, Status: "want"})
+	if b := shelf(s, "Emma"); b.Started != "" || b.Finished != "" {
+		t.Fatal("want to read should clear dates", b)
+	}
+}

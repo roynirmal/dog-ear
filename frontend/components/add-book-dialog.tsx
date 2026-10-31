@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react'
 import { BookPicker } from '@/components/book-picker'
 import { FilterChips } from '@/components/filter-chips'
 import { useLibrary } from '@/components/library-provider'
+import { monthsValid, ReadingMonthFields } from '@/components/reading-months'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { shelfStatusLabels, type Book, type ShelfStatus } from '@/lib/data'
+import { shelfStatusLabels, thisMonth, type Book, type ShelfStatus } from '@/lib/data'
 
 export const shelfStatusOptions = (Object.keys(shelfStatusLabels) as ShelfStatus[]).map((value) => ({
   value,
@@ -26,6 +27,15 @@ export function AddBookDialog({
   const [book, setBook] = useState<Book | null>(null)
   const [status, setStatus] = useState<ShelfStatus>('want')
   const [busy, setBusy] = useState(false)
+  const [started, setStarted] = useState('')
+  const [finished, setFinished] = useState('')
+
+  // A book you're reading started this month unless you say otherwise; for a
+  // finished one only the finish month is suggested.
+  useEffect(() => {
+    setStarted(status === 'reading' ? thisMonth() : '')
+    setFinished(status === 'finished' ? thisMonth() : '')
+  }, [status])
 
   useEffect(() => {
     if (open) {
@@ -36,10 +46,14 @@ export function AddBookDialog({
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
-    if (!book || busy) return
+    if (!book || busy || !monthsValid(status, started, finished)) return
     setBusy(true)
     try {
-      await addToShelf(book, status)
+      await addToShelf(
+        book,
+        status,
+        status === 'want' ? undefined : status === 'reading' ? { started } : { started, finished },
+      )
       onOpenChange(false)
       onAdded()
     } catch {
@@ -59,7 +73,21 @@ export function AddBookDialog({
         <form onSubmit={handleSubmit} className="flex min-w-0 flex-col gap-4">
           <BookPicker id="shelf-book" value={book} onChange={setBook} />
           <FilterChips label="Shelf" value={status} onChange={setStatus} options={shelfStatusOptions} />
-          <Button type="submit" className="h-12 rounded-full text-base" disabled={!book || busy}>
+          <ReadingMonthFields
+            id="shelf-months"
+            status={status}
+            started={started}
+            finished={finished}
+            onChange={(m) => {
+              setStarted(m.started)
+              setFinished(m.finished)
+            }}
+          />
+          <Button
+            type="submit"
+            className="h-12 rounded-full text-base"
+            disabled={!book || busy || !monthsValid(status, started, finished)}
+          >
             {busy ? 'Adding…' : 'Add to shelf'}
           </Button>
         </form>

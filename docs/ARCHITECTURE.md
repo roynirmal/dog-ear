@@ -19,7 +19,7 @@ or write them through `/api/collections/...`.
 friendships  a, b (user IDs, a < b, unique pair)       mutual; invite code or accepted request
 friend_requests  from, to, status (pending|declined), unique pair
 books        owner, title, author, olKey, coverId, year, status (want|reading|finished),
-             lendable
+             lendable, started, finished (YYYY-MM)
 notes        owner, book (own shelf book ID or ""), text, tags[]
 posts        owner, book{title, author, olKey, coverId, year}, status (reading|finished),
              progress 0-100, rating 1-5, thoughts, canLend, shelfBook
@@ -45,6 +45,16 @@ ask to borrow any that are not lent out. A copy is lent out while a loan with th
 logged by hand link the lender's matching shelf copy (by Open Library key or title
 and author) when it is free.
 
+### Reading months
+
+Shelf books record the month you started and finished them. Moving a book to
+"reading" from any other status stamps this month as the start and clears the
+finish (so a re-read starts over); finishing stamps the finish month if it has
+none; "want to read" clears both. Explicit `started` / `finished` values from the
+share dialog, add-book dialog or "Edit dates" then override (`""` clears one). Months
+cannot be in the future and the finish cannot precede the start. Posts show the
+author's months for that book.
+
 ### Notifications
 
 The only notification: when a friend posts that they are reading a book, each of
@@ -69,12 +79,12 @@ on-focus refresh picks up friends' changes.
 | `unfriend` | `id` | Either side; loans between you remain visible |
 | `friend-request` | `id` (user) | Requires a mutual friend; asking someone who asked you accepts; repeats and declined requests are quiet no-ops |
 | `friend-respond` | `id, accept` | Recipient only |
-| `shelf-add` | `book, status, lendable?` | Upserts by Open Library key or case-insensitive title+author |
-| `shelf-update` | `id, status?, lendable?` | Owner only |
+| `shelf-add` | `book, status, lendable?, started?, finished?` | Upserts by Open Library key or case-insensitive title+author |
+| `shelf-update` | `id, status?, lendable?, started?, finished?` | Owner only |
 | `shelf-remove` | `id` | Owner only; unlinks notes, drops pending borrow requests |
 | `note-save` | `id?, bookId?, text, tags[]` | Owner only; `bookId` must be your shelf book |
 | `note-delete` | `id` | Owner only |
-| `post` | `book, status, progress/rating, thoughts, canLend` | Upserts the shelf entry and its `lendable`; a reading post notifies friends once per book |
+| `post` | `book, status, progress/rating, thoughts, canLend, started?, finished?` | Upserts the shelf entry and its `lendable`; a reading post notifies friends once per book |
 | `post-delete` | `id` | Author only; removes likes, comments, its notifications |
 | `like` (toggle), `comment` | `id[, text]` | Post must be yours or a current friend's |
 | `request` | `id` (shelf book) | A friend's lendable copy that is not lent out; one pending request per person |
