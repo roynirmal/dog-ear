@@ -761,3 +761,37 @@ func TestMergeKeepsEachCataloguesTopMatches(t *testing.T) {
 		t.Fatal("merged results exceed the limit")
 	}
 }
+
+func TestRequestErrorsSayWhatIsWrong(t *testing.T) {
+	app := testApp(t)
+	u := testUser(t, app, "maya@example.com", true)
+	token, err := u.NewAuthToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := testHandler(t, app)
+	post := func(body string) (int, string) {
+		req := httptest.NewRequest("POST", "/api/dogear/post", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", token)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		var res struct{ Message string }
+		json.Unmarshal(rr.Body.Bytes(), &res)
+		return rr.Code, res.Message
+	}
+	// What the share dialog used to send when opened from a shelf book.
+	shelfCopy := `{"book":{"title":"Dune","author":"Frank Herbert","id":"abc123","status":"reading"},"status":"reading","progress":40,"canLend":true}`
+	if code, msg := post(shelfCopy); code != 400 || !strings.Contains(msg, `nexpected field "id"`) {
+		t.Fatalf("got %d %q, want the unexpected field named", code, msg)
+	}
+	if code, msg := post(`{"book":`); code != 400 || !strings.Contains(msg, "nvalid JSON") {
+		t.Fatalf("got %d %q", code, msg)
+	}
+	if code, msg := post(`{"thoughts":"` + strings.Repeat("x", 70*1024) + `"}`); code != 400 || !strings.Contains(msg, "too large") {
+		t.Fatalf("got %d %q", code, msg)
+	}
+	if code, msg := post(`{"book":{"title":"Dune","author":"Frank Herbert"},"status":"reading","progress":40,"canLend":true}`); code != 200 {
+		t.Fatalf("catalogue-only book should post: %d %q", code, msg)
+	}
+}

@@ -140,6 +140,14 @@ export type LibraryState = {
   notifications: Notification[]
 }
 
+/**
+ * Just the catalogue details of a book. Shelf books, friends' books and posts
+ * carry extra fields (IDs, status, dates) that the server rejects in a book.
+ */
+export function toBook({ title, author, olKey, coverId, coverUrl, year }: Book): Book {
+  return { title, author, olKey, coverId, coverUrl, year }
+}
+
 export const shelfStatusLabels: Record<ShelfStatus, string> = {
   want: 'Want to read',
   reading: 'Reading',

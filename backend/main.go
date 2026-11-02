@@ -27,7 +27,15 @@ func readBody(e *core.RequestEvent, v any, limit int64) error {
 	d := json.NewDecoder(e.Request.Body)
 	d.DisallowUnknownFields()
 	if err := d.Decode(v); err != nil {
-		return errors.New("invalid JSON or request too large")
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return errors.New("request too large")
+		}
+		// encoding/json reports these as `json: unknown field "name"`.
+		if field, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
+			return errors.New("unexpected field " + field)
+		}
+		return errors.New("invalid JSON")
 	}
 	if d.Decode(&struct{}{}) != io.EOF {
 		return errors.New("unexpected request content")

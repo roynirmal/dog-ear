@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { coverUrl, daysUntil, isOverdue, parseTags, readingSpan, thisMonth, toneFor, type Loan } from './data'
+import {
+  coverUrl,
+  daysUntil,
+  isOverdue,
+  parseTags,
+  readingSpan,
+  thisMonth,
+  toBook,
+  toneFor,
+  type Loan,
+  type ShelfBook,
+} from './data'
 
 describe('parseTags', () => {
   it('normalizes, de-duplicates and hyphenates', () => {
@@ -56,5 +67,35 @@ describe('reading months', () => {
     expect(readingSpan('2026-05', '2026-05')).toBe('May 2026')
     expect(readingSpan(undefined, '2026-05')).toBe('Finished May 2026')
     expect(readingSpan()).toBe('')
+  })
+})
+
+describe('toBook', () => {
+  it('keeps only catalogue details', () => {
+    const shelf: ShelfBook = {
+      id: 'abc',
+      title: 'Dune',
+      author: 'Frank Herbert',
+      olKey: '/works/OL1W',
+      coverId: 7,
+      status: 'reading',
+      lendable: true,
+      started: '2026-10',
+      addedAt: '2026-10-01T00:00:00Z',
+    }
+    expect(toBook(shelf)).toEqual({
+      title: 'Dune',
+      author: 'Frank Herbert',
+      olKey: '/works/OL1W',
+      coverId: 7,
+      coverUrl: undefined,
+      year: undefined,
+    })
+    expect(JSON.parse(JSON.stringify(toBook(shelf)))).toEqual({
+      title: 'Dune',
+      author: 'Frank Herbert',
+      olKey: '/works/OL1W',
+      coverId: 7,
+    })
   })
 })

@@ -2,7 +2,15 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { api, pb } from '@/lib/api'
-import type { Book, LibraryState, LoanDirection, Person, ReadingStatus, ShelfStatus } from '@/lib/data'
+import {
+  toBook,
+  type Book,
+  type LibraryState,
+  type LoanDirection,
+  type Person,
+  type ReadingStatus,
+  type ShelfStatus,
+} from '@/lib/data'
 
 type NewPost = {
   book: Book
@@ -121,18 +129,18 @@ export function LibraryProvider({
       ...state,
       person: (id) => people.get(id) ?? unknownPerson(id),
       refresh,
-      addPost: (post) => run('post', post),
+      addPost: (post) => run('post', { ...post, book: toBook(post.book) }),
       deletePost: (id) => run('post-delete', { id }),
       toggleLike: (id) => run('like', { id }),
       addComment: (id, text) => run('comment', { id, text }),
       requestBorrow: (id) => run('request', { id }),
       respondToRequest: (id, accept) => run('respond', { id, accept }),
-      addLoan: (loan) => run('loan', loan),
+      addLoan: (loan) => run('loan', { ...loan, book: toBook(loan.book) }),
       markReturned: (id) => run('return', { id }),
       undoReturned: (id) => run('unreturn', { id }),
       nudge: (id) => run('nudge', { id }),
       deleteLoan: (id) => run('loan-delete', { id }),
-      addToShelf: (book, status, months) => run('shelf-add', { book, status, ...months }),
+      addToShelf: (book, status, months) => run('shelf-add', { book: toBook(book), status, ...months }),
       setShelfStatus: (id, status) => run('shelf-update', { id, status }),
       setLendable: (id, lendable) => run('shelf-update', { id, lendable }),
       setReadingMonths: (id, months) => run('shelf-update', { id, ...months }),
