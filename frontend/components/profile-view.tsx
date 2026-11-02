@@ -13,6 +13,7 @@ import {
   PenLine,
   Share,
   Trash2,
+  TrendingUp,
 } from 'lucide-react'
 import { shelfStatusOptions } from '@/components/add-book-dialog'
 import { BookCover } from '@/components/book-cover'
@@ -20,6 +21,7 @@ import { FilterChips } from '@/components/filter-chips'
 import { FriendAvatar } from '@/components/friend-avatar'
 import { useLibrary } from '@/components/library-provider'
 import { PostCard } from '@/components/post-card'
+import { useUpdateProgress } from '@/components/progress-dialog'
 import { ReadingMonthsDialog } from '@/components/reading-months'
 import { useInstall } from '@/components/service-worker'
 import { Button } from '@/components/ui/button'
@@ -131,6 +133,7 @@ function ShelfSection({
   const { shelf, loans, notes, person, setShelfStatus, setLendable, removeFromShelf } = useLibrary()
   const [filter, setFilter] = useState<ShelfStatus | 'all'>('all')
   const [datesFor, setDatesFor] = useState<ShelfBook | null>(null)
+  const openProgress = useUpdateProgress()
   const visible = filter === 'all' ? shelf : shelf.filter((book) => book.status === filter)
 
   function lentTo(book: ShelfBook) {
@@ -234,6 +237,29 @@ function ShelfSection({
                     </span>
                   ) : null}
                 </button>
+              ) : null}
+              {book.status === 'reading' ? (
+                <div className="flex items-center gap-2">
+                  <div
+                    role="progressbar"
+                    aria-valuenow={book.progress}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`Reading progress for ${book.title}`}
+                    className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted"
+                  >
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${book.progress}%` }} />
+                  </div>
+                  <span className="text-xs font-medium text-muted-foreground tabular-nums">{book.progress}%</span>
+                  <Button
+                    variant="ghost"
+                    className="h-9 gap-1 px-2 text-sm text-primary"
+                    onClick={() => openProgress(book.id)}
+                  >
+                    <TrendingUp className="size-4" />
+                    Update<span className="sr-only"> progress</span>
+                  </Button>
+                </div>
               ) : null}
               <div className="-mx-2 flex flex-wrap items-center">
                 <Button variant="ghost" className="h-11 gap-1.5 px-2" onClick={() => onShare(book)}>

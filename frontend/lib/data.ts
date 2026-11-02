@@ -44,6 +44,8 @@ export type Post = {
   /** The author's reading months for the book, YYYY-MM. */
   started?: string
   finished?: string
+  /** When the author last updated progress, if after posting; `progress` is then current. */
+  progressAt?: string
   /** Live: the author's copy is lendable and not on loan right now. */
   canLend: boolean
   lentOut: boolean
@@ -86,6 +88,9 @@ export type ShelfBook = Book & {
   /** Reading months, YYYY-MM. */
   started?: string
   finished?: string
+  /** Percent read (0-100) and when it was last updated, for books being read. */
+  progress: number
+  progressAt?: string
   addedAt: string
 }
 

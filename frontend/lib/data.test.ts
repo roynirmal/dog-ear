@@ -81,6 +81,7 @@ describe('toBook', () => {
       status: 'reading',
       lendable: true,
       started: '2026-10',
+      progress: 40,
       addedAt: '2026-10-01T00:00:00Z',
     }
     expect(toBook(shelf)).toEqual({

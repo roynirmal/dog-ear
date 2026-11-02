@@ -34,6 +34,9 @@ type Post struct {
 	// Started and Finished are the author's reading months for the book.
 	Started  string `json:"started,omitempty"`
 	Finished string `json:"finished,omitempty"`
+	// ProgressAt is when the author last updated progress on this read, when
+	// that happened after the post (the post then shows their current progress).
+	ProgressAt string `json:"progressAt,omitempty"`
 	// CanLend is live: the author's copy is lendable and not on loan.
 	CanLend   bool `json:"canLend"`
 	LentOut   bool `json:"lentOut"`
@@ -66,7 +69,10 @@ type ShelfBook struct {
 	Lendable bool   `json:"lendable"`
 	Started  string `json:"started,omitempty"`
 	Finished string `json:"finished,omitempty"`
-	AddedAt  string `json:"addedAt"`
+	// Progress (0-100) and when it was last updated, for books being read.
+	Progress   int    `json:"progress"`
+	ProgressAt string `json:"progressAt,omitempty"`
+	AddedAt    string `json:"addedAt"`
 }
 
 // FriendBook is a lendable book on a friend's shelf.
@@ -215,6 +221,14 @@ func load(app core.App, u *core.Record) (*State, error) {
 		}
 		if b := books[view.ShelfBookID]; b != nil {
 			view.Started, view.Finished = b.GetString("started"), b.GetString("finished")
+			// A reading post follows the read's live progress while it lasts.
+			if view.Status == "reading" && b.GetString("status") == "reading" && b.GetString("progressAt") != "" {
+				progress := b.GetInt("progress")
+				view.Progress = &progress
+				if at := b.GetString("progressAt"); at > view.CreatedAt {
+					view.ProgressAt = at
+				}
+			}
 		}
 		if b := books[view.ShelfBookID]; b != nil && b.GetBool("lendable") {
 			view.LentOut = onLoan[b.Id]
@@ -249,7 +263,7 @@ func load(app core.App, u *core.Record) (*State, error) {
 
 	for _, r := range mine {
 		s.Shelf = append(s.Shelf, ShelfBook{shelfBookOf(r), r.Id, r.GetString("status"), r.GetBool("lendable"),
-			r.GetString("started"), r.GetString("finished"), stamp(r, "created")})
+			r.GetString("started"), r.GetString("finished"), r.GetInt("progress"), r.GetString("progressAt"), stamp(r, "created")})
 	}
 	sort.Slice(s.Shelf, func(i, j int) bool { return s.Shelf[i].AddedAt > s.Shelf[j].AddedAt })
 	for _, r := range library {

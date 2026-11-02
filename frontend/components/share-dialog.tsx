@@ -16,11 +16,13 @@ import { cn } from '@/lib/utils'
 export function ShareDialog({
   open,
   initialBook,
+  initialStatus = 'reading',
   onOpenChange,
   onShared,
 }: {
   open: boolean
   initialBook?: Book
+  initialStatus?: ReadingStatus
   onOpenChange: (open: boolean) => void
   onShared: () => void
 }) {
@@ -55,6 +57,7 @@ export function ShareDialog({
     if (status === 'reading') {
       setStarted((copy?.status === 'reading' && copy.started) || thisMonth())
       setFinished('')
+      if (copy?.status === 'reading' && copy.progressAt) setProgress(copy.progress)
     } else {
       setStarted(copy?.started ?? '')
       setFinished((copy?.status === 'finished' && copy.finished) || thisMonth())
@@ -63,12 +66,12 @@ export function ShareDialog({
   }, [book, status])
 
   useEffect(() => {
-    if (open) reset(initialBook)
-  }, [open, initialBook])
+    if (open) reset(initialBook, initialStatus)
+  }, [open, initialBook, initialStatus])
 
-  function reset(start?: Book) {
+  function reset(start?: Book, startStatus: ReadingStatus = 'reading') {
     setBook(start ?? null)
-    setStatus('reading')
+    setStatus(startStatus)
     setProgress(25)
     setRating(0)
     setThoughts('')

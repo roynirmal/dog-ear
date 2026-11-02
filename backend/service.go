@@ -419,6 +419,8 @@ func setStatus(r *core.Record, status string, started, finished *string, justFin
 	case "reading":
 		if prev != "reading" {
 			r.Set("started", thisMonth())
+			r.Set("progress", 0)
+			r.Set("progressAt", "")
 		}
 		r.Set("finished", "")
 	case "finished":
@@ -789,6 +791,11 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 			return err
 		}
 		if in.Status == "reading" {
+			shelf.Set("progress", *in.Progress)
+			shelf.Set("progressAt", now())
+			if err := app.Save(shelf); err != nil {
+				return err
+			}
 			return notifyStartedReading(app, uid, r, b)
 		}
 		return nil
@@ -1000,6 +1007,23 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 			}
 			return app.Delete(r)
 		}
+		return app.Save(r)
+
+	case "progress":
+		// Updates how far you are through a book you're reading; every post
+		// about this read shows it, and nothing new is posted or notified.
+		r, err := owned(app, "books", "owner", uid, in.ID)
+		if err != nil {
+			return err
+		}
+		if r.GetString("status") != "reading" {
+			return errors.New("only books you're reading have progress")
+		}
+		if in.Progress == nil || *in.Progress < 0 || *in.Progress > 100 {
+			return errors.New("progress must be between 0 and 100")
+		}
+		r.Set("progress", *in.Progress)
+		r.Set("progressAt", now())
 		return app.Save(r)
 
 	case "notifications-read":

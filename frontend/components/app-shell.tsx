@@ -11,13 +11,14 @@ import { LoansView } from '@/components/loans-view'
 import { NoteDialog } from '@/components/note-dialog'
 import { NotificationsButton } from '@/components/notifications'
 import { PersonCardProvider } from '@/components/person-card'
+import { ProgressProvider } from '@/components/progress-dialog'
 import { ProfileView } from '@/components/profile-view'
 import { ShareDialog } from '@/components/share-dialog'
 import { SignIn } from '@/components/sign-in'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { api, pb } from '@/lib/api'
-import { isOverdue, type Book, type LibraryState, type Note } from '@/lib/data'
+import { isOverdue, type Book, type LibraryState, type Note, type ReadingStatus } from '@/lib/data'
 import { cn } from '@/lib/utils'
 
 type Tab = 'feed' | 'loans' | 'friends' | 'you'
@@ -160,7 +161,7 @@ function Shell() {
   const { loans, requests, friendRequests } = useLibrary()
   const [tab, setTab] = useState<Tab>('feed')
   const [chooserOpen, setChooserOpen] = useState(false)
-  const [share, setShare] = useState<{ open: boolean; book?: Book }>({ open: false })
+  const [share, setShare] = useState<{ open: boolean; book?: Book; status?: ReadingStatus }>({ open: false })
   const [loan, setLoan] = useState<{ open: boolean; book?: Book }>({ open: false })
   const [addBookOpen, setAddBookOpen] = useState(false)
   const [note, setNote] = useState<{ open: boolean; note?: Note; bookId?: string }>({ open: false })
@@ -244,93 +245,98 @@ function Shell() {
   ]
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
-      <header className="sticky top-0 z-30 border-b bg-background/90 px-4 pt-[max(env(safe-area-inset-top),0.75rem)] pb-3 backdrop-blur">
-        <div className="flex items-end justify-between gap-3">
-          <div className="min-w-0">
-            <p className="font-serif text-sm font-semibold tracking-tight text-primary italic">Dog-ear</p>
-            <h1 className="font-serif text-2xl leading-tight font-semibold text-balance">{tabMeta[tab].title}</h1>
+    <ProgressProvider onFinished={(book) => setShare({ open: true, book, status: 'finished' })}>
+      <div className="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
+        <header className="sticky top-0 z-30 border-b bg-background/90 px-4 pt-[max(env(safe-area-inset-top),0.75rem)] pb-3 backdrop-blur">
+          <div className="flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-serif text-sm font-semibold tracking-tight text-primary italic">Dog-ear</p>
+              <h1 className="font-serif text-2xl leading-tight font-semibold text-balance">{tabMeta[tab].title}</h1>
+            </div>
+            <NotificationsButton onOpenPost={openPost} />
           </div>
-          <NotificationsButton onOpenPost={openPost} />
-        </div>
-      </header>
+        </header>
 
-      <main className="flex-1 pt-5 pb-32">
-        {tab === 'feed' ? <FeedView onShare={() => setShare({ open: true })} onInvite={() => goTo('friends')} /> : null}
-        {tab === 'loans' ? <LoansView onLogLoan={() => setLoan({ open: true })} /> : null}
-        {tab === 'friends' ? <FriendsView /> : null}
-        {tab === 'you' ? (
-          <ProfileView
-            onShare={(book) => setShare({ open: true, book })}
-            onLend={(book) => setLoan({ open: true, book })}
-            onAddBook={() => setAddBookOpen(true)}
-            onNote={(options) => setNote({ open: true, ...options })}
-          />
-        ) : null}
-      </main>
+        <main className="flex-1 pt-5 pb-32">
+          {tab === 'feed' ? (
+            <FeedView onShare={() => setShare({ open: true })} onInvite={() => goTo('friends')} />
+          ) : null}
+          {tab === 'loans' ? <LoansView onLogLoan={() => setLoan({ open: true })} /> : null}
+          {tab === 'friends' ? <FriendsView /> : null}
+          {tab === 'you' ? (
+            <ProfileView
+              onShare={(book) => setShare({ open: true, book })}
+              onLend={(book) => setLoan({ open: true, book })}
+              onAddBook={() => setAddBookOpen(true)}
+              onNote={(options) => setNote({ open: true, ...options })}
+            />
+          ) : null}
+        </main>
 
-      <nav
-        aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur"
-      >
-        <div className="mx-auto flex max-w-lg items-center gap-1 px-2 py-1">
-          {leftTabs.map(renderTab)}
-          <div className="flex flex-1 justify-center">
-            <button
-              type="button"
-              onClick={() => setChooserOpen(true)}
-              className="-mt-6 flex size-14 items-center justify-center rounded-full bg-accent text-white shadow-lg ring-4 ring-background outline-none focus-visible:ring-ring"
-            >
-              <Plus aria-hidden="true" className="size-7" />
-              <span className="sr-only">Add</span>
-            </button>
+        <nav
+          aria-label="Main"
+          className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur"
+        >
+          <div className="mx-auto flex max-w-lg items-center gap-1 px-2 py-1">
+            {leftTabs.map(renderTab)}
+            <div className="flex flex-1 justify-center">
+              <button
+                type="button"
+                onClick={() => setChooserOpen(true)}
+                className="-mt-6 flex size-14 items-center justify-center rounded-full bg-accent text-white shadow-lg ring-4 ring-background outline-none focus-visible:ring-ring"
+              >
+                <Plus aria-hidden="true" className="size-7" />
+                <span className="sr-only">Add</span>
+              </button>
+            </div>
+            {rightTabs.map(renderTab)}
           </div>
-          {rightTabs.map(renderTab)}
-        </div>
-      </nav>
+        </nav>
 
-      <Dialog open={chooserOpen} onOpenChange={setChooserOpen}>
-        <DialogContent className="rounded-2xl p-5 sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-serif text-xl">Add to Dog-ear</DialogTitle>
-            <DialogDescription>Share a read or keep tabs on a book.</DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-3">
-            {choices.map((choice) => (
-              <ChooserOption
-                key={choice.title}
-                {...choice}
-                onClick={() => {
-                  setChooserOpen(false)
-                  choice.onClick()
-                }}
-              />
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
+        <Dialog open={chooserOpen} onOpenChange={setChooserOpen}>
+          <DialogContent className="rounded-2xl p-5 sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="font-serif text-xl">Add to Dog-ear</DialogTitle>
+              <DialogDescription>Share a read or keep tabs on a book.</DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-3">
+              {choices.map((choice) => (
+                <ChooserOption
+                  key={choice.title}
+                  {...choice}
+                  onClick={() => {
+                    setChooserOpen(false)
+                    choice.onClick()
+                  }}
+                />
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
 
-      <ShareDialog
-        open={share.open}
-        initialBook={share.book}
-        onOpenChange={(open) => setShare((current) => ({ ...current, open }))}
-        onShared={() => goTo('feed')}
-      />
-      <LoanDialog
-        open={loan.open}
-        initialBook={loan.book}
-        onOpenChange={(open) => setLoan((current) => ({ ...current, open }))}
-        onLogged={() => goTo('loans')}
-      />
-      <AddBookDialog open={addBookOpen} onOpenChange={setAddBookOpen} onAdded={() => goTo('you')} />
-      <NoteDialog
-        open={note.open}
-        note={note.note}
-        bookId={note.bookId}
-        onOpenChange={(open) => setNote((current) => ({ ...current, open }))}
-        onSaved={() => goTo('you')}
-      />
-    </div>
+        <ShareDialog
+          open={share.open}
+          initialBook={share.book}
+          initialStatus={share.status}
+          onOpenChange={(open) => setShare((current) => ({ ...current, open }))}
+          onShared={() => goTo('feed')}
+        />
+        <LoanDialog
+          open={loan.open}
+          initialBook={loan.book}
+          onOpenChange={(open) => setLoan((current) => ({ ...current, open }))}
+          onLogged={() => goTo('loans')}
+        />
+        <AddBookDialog open={addBookOpen} onOpenChange={setAddBookOpen} onAdded={() => goTo('you')} />
+        <NoteDialog
+          open={note.open}
+          note={note.note}
+          bookId={note.bookId}
+          onOpenChange={(open) => setNote((current) => ({ ...current, open }))}
+          onSaved={() => goTo('you')}
+        />
+      </div>
+    </ProgressProvider>
   )
 }
 

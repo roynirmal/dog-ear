@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -793,5 +794,70 @@ func TestRequestErrorsSayWhatIsWrong(t *testing.T) {
 	}
 	if code, msg := post(`{"book":{"title":"Dune","author":"Frank Herbert"},"status":"reading","progress":40,"canLend":true}`); code != 200 {
 		t.Fatalf("catalogue-only book should post: %d %q", code, msg)
+	}
+}
+
+func TestUpdatingProgressChangesPostsInPlace(t *testing.T) {
+	app := testApp(t)
+	maya := testUser(t, app, "maya@example.com", true)
+	theo := testUser(t, app, "theo@example.com", true)
+	befriend(t, app, maya, theo)
+	s := call(t, app, maya, "post", Input{Book: book("Dune"), Status: "reading", Progress: intp(25), CanLend: true})
+	bookID := s.Shelf[0].ID
+	if s.Shelf[0].Progress != 25 || s.Posts[0].ProgressAt != "" {
+		t.Fatal("posting should set the shelf progress without an 'updated' mark", s.Shelf[0], s.Posts[0])
+	}
+	// Make the update land after the post, as it would in real use.
+	if _, err := app.DB().NewQuery("UPDATE posts SET created = '2026-01-01 00:00:00.000Z' WHERE id = {:id}").
+		Bind(dbx.Params{"id": s.Posts[0].ID}).Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	s = call(t, app, maya, "progress", Input{ID: bookID, Progress: intp(60)})
+	if len(s.Posts) != 1 || *s.Posts[0].Progress != 60 || s.Posts[0].ProgressAt == "" || s.Shelf[0].Progress != 60 {
+		t.Fatal("progress should update the existing post, not add one", s.Posts, s.Shelf[0])
+	}
+	ts := call(t, app, theo, "state", Input{})
+	if len(ts.Posts) != 1 || *ts.Posts[0].Progress != 60 {
+		t.Fatal("friends should see the new progress on the same post", ts.Posts)
+	}
+	if len(ts.Notifications) != 1 {
+		t.Fatal("a progress update must not notify again", ts.Notifications)
+	}
+
+	if _, err := execute(app, theo, "progress", Input{ID: bookID, Progress: intp(90)}); !errors.Is(err, ErrNotFound) {
+		t.Fatal("someone else updated your progress", err)
+	}
+	for _, bad := range []*int{nil, intp(-1), intp(101)} {
+		if _, err := execute(app, maya, "progress", Input{ID: bookID, Progress: bad}); err == nil {
+			t.Fatal("bad progress accepted", bad)
+		}
+	}
+	s = call(t, app, maya, "shelf-add", Input{Book: book("Emma"), Status: "want"})
+	for _, b := range s.Shelf {
+		if b.Title == "Emma" {
+			if _, err := execute(app, maya, "progress", Input{ID: b.ID, Progress: intp(10)}); err == nil {
+				t.Fatal("progress on a want-to-read book accepted")
+			}
+		}
+	}
+
+	// A book on the shelf you never shared can still track progress.
+	s = call(t, app, maya, "shelf-add", Input{Book: book("Ulysses"), Status: "reading"})
+	for _, b := range s.Shelf {
+		if b.Title == "Ulysses" {
+			if b.Progress != 0 {
+				t.Fatal("new reading book should start at 0", b)
+			}
+			s = call(t, app, maya, "progress", Input{ID: b.ID, Progress: intp(15)})
+		}
+	}
+	// Finishing keeps the old post as a reading post; re-reading starts at 0.
+	s = call(t, app, maya, "post", Input{Book: book("Dune"), Status: "finished", Rating: intp(5)})
+	s = call(t, app, maya, "shelf-update", Input{ID: bookID, Status: "reading"})
+	for _, b := range s.Shelf {
+		if b.ID == bookID && b.Progress != 0 {
+			t.Fatal("re-reading should reset progress", b)
+		}
 	}
 }

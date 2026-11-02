@@ -19,7 +19,7 @@ or write them through `/api/collections/...`.
 friendships  a, b (user IDs, a < b, unique pair)       mutual; invite code or accepted request
 friend_requests  from, to, status (pending|declined), unique pair
 books        owner, title, author, olKey, coverId, year, status (want|reading|finished),
-             lendable, started, finished (YYYY-MM)
+             lendable, started, finished (YYYY-MM), progress (0-100), progressAt
 notes        owner, book (own shelf book ID or ""), text, tags[]
 posts        owner, book{title, author, olKey, coverId, year}, status (reading|finished),
              progress 0-100, rating 1-5, thoughts, canLend, shelfBook
@@ -56,6 +56,14 @@ both months blank, since you may not remember them. "Want to read" clears both. 
 share dialog, add-book dialog or "Edit dates" then override (`""` clears one). Months
 cannot be in the future and the finish cannot precede the start. Posts show the
 author's months for that book.
+
+### Reading progress
+
+Progress belongs to the shelf book, not to a post. Posting "reading" sets it;
+the `progress` action updates it without creating a post or notification. A
+reading post shows the live progress of its shelf book while that book is still
+being read, plus `progressAt` when it was updated after the post. Starting or
+re-reading a book resets progress to 0.
 
 ### Notifications
 
@@ -95,6 +103,7 @@ on-focus refresh picks up friends' changes.
 | `return`, `unreturn` | `id` | Either party; undo is refused if the copy is lent out again |
 | `nudge` | `id` | Lender only, active loan with an app friend |
 | `loan-delete` | `id` | Whoever logged it |
+| `progress` | `id` (shelf book), `progress` | Owner only, book must be "reading"; 0-100; no post or notification |
 | `notifications-read` | `{}` | Marks your notifications read |
 
 `GET /api/dogear/search?q=` (authenticated) searches Open Library and Google Books

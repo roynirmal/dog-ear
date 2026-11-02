@@ -65,6 +65,8 @@ type LibraryContextValue = LibraryState & {
   setShelfStatus: (bookId: string, status: ShelfStatus) => Promise<void>
   setLendable: (bookId: string, lendable: boolean) => Promise<void>
   setReadingMonths: (bookId: string, months: ReadingMonths) => Promise<void>
+  /** Changes how far you are through a book you're reading, without posting. */
+  updateProgress: (bookId: string, progress: number) => Promise<void>
   removeFromShelf: (bookId: string) => Promise<void>
   saveNote: (note: NoteInput) => Promise<void>
   deleteNote: (noteId: string) => Promise<void>
@@ -144,6 +146,7 @@ export function LibraryProvider({
       setShelfStatus: (id, status) => run('shelf-update', { id, status }),
       setLendable: (id, lendable) => run('shelf-update', { id, lendable }),
       setReadingMonths: (id, months) => run('shelf-update', { id, ...months }),
+      updateProgress: (id, progress) => run('progress', { id, progress }),
       removeFromShelf: (id) => run('shelf-remove', { id }),
       saveNote: (note) => run('note-save', note),
       deleteNote: (id) => run('note-delete', { id }),

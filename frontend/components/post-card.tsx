@@ -1,17 +1,19 @@
 'use client'
 
 import { useState } from 'react'
-import { BookMarked, CalendarDays, Check, Heart, MessageCircle, Send, Star, Trash2 } from 'lucide-react'
+import { BookMarked, CalendarDays, Check, Heart, MessageCircle, Send, Star, Trash2, TrendingUp } from 'lucide-react'
 import { BookCover } from '@/components/book-cover'
 import { FriendAvatar } from '@/components/friend-avatar'
 import { useLibrary } from '@/components/library-provider'
 import { PersonButton } from '@/components/person-card'
+import { useUpdateProgress } from '@/components/progress-dialog'
 import { Button } from '@/components/ui/button'
 import { readingSpan, relativeTime, type Post } from '@/lib/data'
 import { cn } from '@/lib/utils'
 
 export function PostCard({ post }: { post: Post }) {
-  const { me, person, toggleLike, addComment, requestBorrow, deletePost } = useLibrary()
+  const { me, person, shelf, toggleLike, addComment, requestBorrow, deletePost } = useLibrary()
+  const openProgress = useUpdateProgress()
   const [showComments, setShowComments] = useState(post.comments.length > 0)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -19,6 +21,9 @@ export function PostCard({ post }: { post: Post }) {
   const liked = post.likedBy.includes(me.id)
   const isMine = post.authorId === me.id
   const span = readingSpan(post.started, post.status === 'finished' ? post.finished : undefined)
+  // Your post about a book you're still reading can update its progress in place.
+  const reading =
+    isMine && post.status === 'reading' && shelf.some((b) => b.id === post.shelfBookId && b.status === 'reading')
 
   async function submitComment(event: React.FormEvent) {
     event.preventDefault()
@@ -55,6 +60,14 @@ export function PostCard({ post }: { post: Post }) {
             <time dateTime={post.createdAt} suppressHydrationWarning>
               {relativeTime(post.createdAt)}
             </time>
+            {post.progressAt ? (
+              <>
+                {' · '}
+                <time dateTime={post.progressAt} suppressHydrationWarning>
+                  updated {relativeTime(post.progressAt)}
+                </time>
+              </>
+            ) : null}
           </p>
         </div>
       </header>
@@ -101,7 +114,7 @@ export function PostCard({ post }: { post: Post }) {
 
       {post.thoughts ? <p className="mt-4 text-[0.95rem] leading-relaxed text-pretty">{post.thoughts}</p> : null}
 
-      <div className="mt-3 flex items-center gap-1 border-t pt-2 -mx-1">
+      <div className="-mx-1 mt-3 flex flex-wrap items-center gap-1 border-t pt-2">
         <Button
           variant="ghost"
           className="h-11 gap-1.5 px-3"
@@ -137,10 +150,20 @@ export function PostCard({ post }: { post: Post }) {
             Lent out
           </span>
         ) : null}
+        {reading ? (
+          <Button
+            variant="outline"
+            className="ml-auto h-11 gap-1.5 rounded-full px-3"
+            onClick={() => openProgress(post.shelfBookId!)}
+          >
+            <TrendingUp className="size-4" />
+            Update progress
+          </Button>
+        ) : null}
         {isMine ? (
           <Button
             variant="ghost"
-            className="ml-auto h-11 px-3 text-muted-foreground"
+            className={cn('h-11 px-3 text-muted-foreground', !reading && 'ml-auto')}
             onClick={() => {
               if (window.confirm('Delete this post and its comments?')) deletePost(post.id).catch(() => undefined)
             }}
