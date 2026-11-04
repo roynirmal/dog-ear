@@ -41,22 +41,46 @@ Keep the production origin `https://dog-ear.app` and redirect
 
 ## Run
 
-```sh
-make up
-```
-
-Builds the frontend into `backend/pb_public/` and serves the whole app from
-PocketBase on **http://127.0.0.1:8091**. To publish it, point a named Cloudflare
-Tunnel (or any reverse proxy) at that port; there is only one service.
-
-For frontend work with hot reload:
+For normal operation, always launch detached, as with Payback, so the server
+survives terminal and Codex session cleanup. From the repository root (requires
+Python 3):
 
 ```sh
-make dev
+# Load existing secrets into the environment on this Mac.
+source ~/.databake_profile
+make build
+(cd backend && go build -o dogear .)
+
+python3 - <<'PY'
+import subprocess
+from pathlib import Path
+
+if subprocess.run(["lsof", "-t", "-iTCP:8091", "-sTCP:LISTEN"], stdout=subprocess.DEVNULL).returncode == 0:
+    raise SystemExit("Port 8091 is already in use; stop the existing Dog-ear server before restarting.")
+
+root = Path.cwd()
+logs = Path.home() / "Library/Logs/dogear"
+logs.mkdir(parents=True, exist_ok=True, mode=0o700)
+with (logs / "server.log").open("ab") as log:
+    server = subprocess.Popen(
+        [str(root / "backend/dogear"), "serve", "--http=127.0.0.1:8091"],
+        cwd=root / "backend", stdin=subprocess.DEVNULL,
+        stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+    )
+print(f"Dog-ear started with PID {server.pid}; logs: {logs / 'server.log'}")
+PY
 ```
 
-Opens Next.js on http://127.0.0.1:5174 against the backend on 8091. Restart after Go
-changes. Ports 8090/5173 are left free for payback.
+The server inherits exported credentials; keep them outside the repository.
+Verify startup with `curl --fail http://127.0.0.1:8091/api/health`. To stop or
+restart, find its PID with `lsof -nP -iTCP:8091 -sTCP:LISTEN`, run
+`kill -TERM <PID>`, then rerun the commands above. A detached process does not
+automatically restart after a crash or reboot.
+
+PocketBase serves the built frontend at **http://127.0.0.1:8091**. Point the
+Cloudflare Tunnel (or another reverse proxy) at that port for `https://dog-ear.app`.
+For frontend hot reload, use `make dev` as described above. Ports 8090/5173 stay
+free for Payback.
 
 ## Install on a phone
 
@@ -65,7 +89,7 @@ Chrome offer an install prompt (also under You → Install Dog-ear); on iPhone u
 Share → Add to Home Screen. `frontend/public/sw.js` caches the app shell and book
 covers so it opens instantly and offline; library data is never cached. Bump
 `VERSION` in `sw.js` if you change its caching rules. The service worker is only
-registered in production builds (`make up`), not in `make dev`.
+registered in production builds (`make build`), not in `make dev`.
 
 ## Optional: Google Books key
 
