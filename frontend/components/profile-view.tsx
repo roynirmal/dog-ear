@@ -264,7 +264,7 @@ function ShelfSection({
               <div className="-mx-2 flex flex-wrap items-center">
                 <Button variant="ghost" className="h-11 gap-1.5 px-2" onClick={() => onShare(book)}>
                   <PenLine className="size-4" />
-                  Share
+                  Edit
                 </Button>
                 <Button variant="ghost" className="h-11 gap-1.5 px-2" onClick={() => onLend(book)}>
                   <ArrowLeftRight className="size-4" />

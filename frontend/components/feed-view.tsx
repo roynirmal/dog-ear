@@ -21,13 +21,14 @@ export function FeedView({ onShare, onInvite }: { onShare: () => void; onInvite:
   const { posts, me, friends, person } = useLibrary()
   const [filter, setFilter] = useState<Filter>('all')
 
-  const currentlyReading = posts.filter(
+  // Your own posts live on the You tab.
+  const friendPosts = posts.filter((post) => post.authorId !== me.id)
+  const currentlyReading = friendPosts.filter(
     (post, index, all) =>
       post.status === 'reading' &&
-      post.authorId !== me.id &&
       all.findIndex((p) => p.authorId === post.authorId && p.status === 'reading') === index,
   )
-  const visible = filter === 'all' ? posts : posts.filter((post) => post.status === filter)
+  const visible = filter === 'all' ? friendPosts : friendPosts.filter((post) => post.status === filter)
 
   return (
     <div className="flex flex-col gap-6">
