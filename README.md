@@ -13,8 +13,7 @@ Share what you're reading with friends, and keep track of the books you lend and
 - Add friends by invite link, by email, or by tapping someone in the comments
 - One in-app notification when a friend starts reading a book
 
-Built with Next.js (static export) and PocketBase extended in Go, the same backend
-stack as payback.
+Built with Next.js (static export) and PocketBase extended in Go.
 
 ## Local development
 
@@ -41,25 +40,24 @@ Keep the production origin `https://dog-ear.app` and redirect
 
 ## Run
 
-For normal operation, always launch detached, as with Payback, so the server
-survives terminal and Codex session cleanup. From the repository root (requires
-Python 3):
+For normal operation, launch the server as a detached process so it runs
+independently of the terminal. Export any credentials before running these
+commands from the repository root (requires Python 3):
 
 ```sh
-# Load existing secrets into the environment on this Mac.
-source ~/.databake_profile
 make build
 (cd backend && go build -o dogear .)
 
 python3 - <<'PY'
 import subprocess
+import tempfile
 from pathlib import Path
 
 if subprocess.run(["lsof", "-t", "-iTCP:8091", "-sTCP:LISTEN"], stdout=subprocess.DEVNULL).returncode == 0:
     raise SystemExit("Port 8091 is already in use; stop the existing Dog-ear server before restarting.")
 
 root = Path.cwd()
-logs = Path.home() / "Library/Logs/dogear"
+logs = Path(tempfile.gettempdir()) / "dogear"
 logs.mkdir(parents=True, exist_ok=True, mode=0o700)
 with (logs / "server.log").open("ab") as log:
     server = subprocess.Popen(
@@ -79,8 +77,7 @@ automatically restart after a crash or reboot.
 
 PocketBase serves the built frontend at **http://127.0.0.1:8091**. Point the
 Cloudflare Tunnel (or another reverse proxy) at that port for `https://dog-ear.app`.
-For frontend hot reload, use `make dev` as described above. Ports 8090/5173 stay
-free for Payback.
+For frontend hot reload, use `make dev` as described above.
 
 ## Install on a phone
 
