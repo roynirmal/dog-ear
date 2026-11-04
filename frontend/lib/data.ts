@@ -39,6 +39,8 @@ export type Post = {
   createdAt: string
   likedBy: string[]
   comments: Comment[]
+  /** The author's public notes on this book; only on their latest post about it. */
+  notes: PublicNote[]
   /** The author's shelf copy behind this post. */
   shelfBookId?: string
   /** The author's reading months for the book, YYYY-MM. */
@@ -124,9 +126,13 @@ export type Note = {
   bookId?: string
   text: string
   tags: string[]
+  /** Shown to friends on your post about the book; only notes about a book. */
+  public: boolean
   createdAt: string
   updatedAt: string
 }
+
+export type PublicNote = Pick<Note, 'id' | 'text' | 'tags' | 'updatedAt'>
 
 export type LibraryState = {
   me: Person

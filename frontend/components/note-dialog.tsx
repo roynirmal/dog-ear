@@ -27,6 +27,7 @@ export function NoteDialog({
   const [text, setText] = useState('')
   const [tags, setTags] = useState('')
   const [bookId, setBookId] = useState('')
+  const [isPublic, setIsPublic] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const knownTags = [...new Set(notes.flatMap((n) => n.tags))].sort()
@@ -37,6 +38,7 @@ export function NoteDialog({
     setText(note?.text ?? '')
     setTags(note?.tags.join(', ') ?? '')
     setBookId(note?.bookId ?? initialBookId ?? '')
+    setIsPublic(note?.public ?? false)
   }, [open, note, initialBookId])
 
   function addTag(tag: string) {
@@ -60,7 +62,8 @@ export function NoteDialog({
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     if (!text.trim()) return
-    act(() => saveNote({ id: note?.id, bookId: bookId || undefined, text: text.trim(), tags: chosen }))
+    const shared = !!bookId && isPublic
+    act(() => saveNote({ id: note?.id, bookId: bookId || undefined, text: text.trim(), tags: chosen, public: shared }))
   }
 
   return (
@@ -68,7 +71,7 @@ export function NoteDialog({
       <DialogContent className="max-h-[90dvh] overflow-y-auto rounded-2xl p-5 sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-serif text-xl">{note ? 'Edit note' : 'New note'}</DialogTitle>
-          <DialogDescription>Notes are private to you.</DialogDescription>
+          <DialogDescription>Notes are private unless you share one about a book with friends.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex min-w-0 flex-col gap-4">
           <div className="flex flex-col gap-2">
@@ -101,6 +104,17 @@ export function NoteDialog({
                 </option>
               ))}
             </select>
+            {bookId ? (
+              <label className="flex min-h-11 items-center gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={isPublic}
+                  onChange={(e) => setIsPublic(e.target.checked)}
+                  className="size-5 accent-primary"
+                />
+                Friends can read this on my post about the book
+              </label>
+            ) : null}
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="note-tags">Tags</Label>

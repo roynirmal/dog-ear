@@ -1,25 +1,38 @@
 'use client'
 
 import { useState } from 'react'
-import { BookMarked, CalendarDays, Check, Heart, MessageCircle, Send, Star, Trash2, TrendingUp } from 'lucide-react'
+import {
+  BookMarked,
+  CalendarDays,
+  Check,
+  Heart,
+  MessageCircle,
+  NotebookText,
+  Send,
+  Star,
+  Trash2,
+  TrendingUp,
+} from 'lucide-react'
 import { BookCover } from '@/components/book-cover'
 import { FriendAvatar } from '@/components/friend-avatar'
 import { useLibrary } from '@/components/library-provider'
 import { PersonButton } from '@/components/person-card'
 import { useUpdateProgress } from '@/components/progress-dialog'
 import { Button } from '@/components/ui/button'
-import { readingSpan, relativeTime, type Post } from '@/lib/data'
+import { firstName, readingSpan, relativeTime, type Post } from '@/lib/data'
 import { cn } from '@/lib/utils'
 
 export function PostCard({ post }: { post: Post }) {
   const { me, person, shelf, toggleLike, addComment, requestBorrow, deletePost } = useLibrary()
   const openProgress = useUpdateProgress()
   const [showComments, setShowComments] = useState(post.comments.length > 0)
+  const [showNotes, setShowNotes] = useState(false)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const author = person(post.authorId)
   const liked = post.likedBy.includes(me.id)
   const isMine = post.authorId === me.id
+  const notesLabel = `${isMine ? 'Your' : `${firstName(author.name)}'s`} notes (${post.notes.length})`
   const span = readingSpan(post.started, post.status === 'finished' ? post.finished : undefined)
   // Your post about a book you're still reading can update its progress in place.
   const reading =
@@ -113,6 +126,49 @@ export function PostCard({ post }: { post: Post }) {
       </div>
 
       {post.thoughts ? <p className="mt-4 text-[0.95rem] leading-relaxed text-pretty">{post.thoughts}</p> : null}
+
+      {post.notes.length > 0 ? (
+        <div className="mt-3">
+          <Button
+            variant="outline"
+            className="h-9 gap-1.5 rounded-full px-3 text-sm"
+            aria-expanded={showNotes}
+            onClick={() => setShowNotes((open) => !open)}
+          >
+            <NotebookText className="size-4" />
+            {showNotes ? 'Hide notes' : notesLabel}
+          </Button>
+          {showNotes ? (
+            <ul className="mt-3 flex flex-col gap-2">
+              {post.notes.map((note) => (
+                <li
+                  key={note.id}
+                  className="flex flex-col gap-1.5 rounded-xl border-l-2 border-primary/40 bg-muted/50 px-3 py-2"
+                >
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{note.text}</p>
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    {note.tags.map((t) => (
+                      <span
+                        key={t}
+                        className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent-foreground"
+                      >
+                        #{t}
+                      </span>
+                    ))}
+                    <time
+                      dateTime={note.updatedAt}
+                      suppressHydrationWarning
+                      className="ml-auto text-xs text-muted-foreground"
+                    >
+                      {relativeTime(note.updatedAt)}
+                    </time>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="-mx-1 mt-3 flex flex-wrap items-center gap-1 border-t pt-2">
         <Button

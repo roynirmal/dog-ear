@@ -44,6 +44,7 @@ type NoteInput = {
   bookId?: string
   text: string
   tags: string[]
+  public: boolean
 }
 
 type LibraryContextValue = LibraryState & {

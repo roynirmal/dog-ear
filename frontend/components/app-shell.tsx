@@ -158,7 +158,7 @@ export function AppShell() {
 }
 
 function Shell() {
-  const { loans, requests, friendRequests } = useLibrary()
+  const { loans, requests, friendRequests, posts, me } = useLibrary()
   const [tab, setTab] = useState<Tab>('feed')
   const [chooserOpen, setChooserOpen] = useState(false)
   const [share, setShare] = useState<{ open: boolean; book?: Book; status?: ReadingStatus }>({ open: false })
@@ -177,7 +177,8 @@ function Shell() {
   }
 
   function openPost(postId: string) {
-    setTab('feed')
+    // Your own posts only appear on the You tab.
+    setTab(posts.find((post) => post.id === postId)?.authorId === me.id ? 'you' : 'feed')
     // Wait for the feed to render before scrolling to the post.
     window.setTimeout(() => {
       const post = document.getElementById(`post-${postId}`)
@@ -319,7 +320,7 @@ function Shell() {
           initialBook={share.book}
           initialStatus={share.status}
           onOpenChange={(open) => setShare((current) => ({ ...current, open }))}
-          onShared={() => goTo('feed')}
+          onShared={() => goTo('you')}
         />
         <LoanDialog
           open={loan.open}

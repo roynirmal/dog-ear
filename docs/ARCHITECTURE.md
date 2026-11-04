@@ -20,7 +20,7 @@ friendships  a, b (user IDs, a < b, unique pair)       mutual; invite code or ac
 friend_requests  from, to, status (pending|declined), unique pair
 books        owner, title, author, olKey, coverId, year, status (want|reading|finished),
              lendable, started, finished (YYYY-MM), progress (0-100), progressAt
-notes        owner, book (own shelf book ID or ""), text, tags[]
+notes        owner, book (own shelf book ID or ""), text, tags[], public
 posts        owner, book{title, author, olKey, coverId, year}, status (reading|finished),
              progress 0-100, rating 1-5, thoughts, canLend, shelfBook
 likes        post, user (unique pair)
@@ -91,8 +91,8 @@ on-focus refresh picks up friends' changes.
 | `friend-respond` | `id, accept` | Recipient only |
 | `shelf-add` | `book, status, lendable?, started?, finished?` | Upserts by Open Library key or case-insensitive title+author |
 | `shelf-update` | `id, status?, lendable?, started?, finished?` | Owner only |
-| `shelf-remove` | `id` | Owner only; unlinks notes, drops pending borrow requests |
-| `note-save` | `id?, bookId?, text, tags[]` | Owner only; `bookId` must be your shelf book |
+| `shelf-remove` | `id` | Owner only; unlinks notes (making them private), drops pending borrow requests |
+| `note-save` | `id?, bookId?, text, tags[], public?` | Owner only; `bookId` must be your shelf book; only notes with a book can be public |
 | `note-delete` | `id` | Owner only |
 | `post` | `book, status, progress/rating, thoughts, canLend, started?, finished?` | Upserts the shelf entry and its `lendable`; a reading post notifies friends once per book |
 | `post-delete` | `id` | Author only; removes likes, comments, its notifications |
@@ -132,7 +132,9 @@ of 32 characters, normalized to lowercase-hyphenated.
   and hearts are visible to whoever can see the post, which can include friends of
   the author you are not friends with yourself. Tapping their name offers a friend
   request; requests are only allowed between people with a mutual friend.
-- Notes are private. Of your shelf, friends see only lendable books (and whether
+- Notes are private unless you make a note about a book public. A public note is
+  shown, with its tags, on your newest post about that book, so whoever can see
+  that post can read it. With no post about the book, nobody else sees it. Of your shelf, friends see only lendable books (and whether
   they are lent out); the rest is private.
 - A loan is visible to its lender and borrower. Unfriending does not hide it.
 - Invite links are bearer links: anyone with the link who signs in becomes your
