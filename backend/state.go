@@ -19,18 +19,28 @@ type Comment struct {
 	Text      string `json:"text"`
 	CreatedAt string `json:"createdAt"`
 }
+
+// PublicNote is a note the author shared on their post about the book.
+type PublicNote struct {
+	ID        string   `json:"id"`
+	Text      string   `json:"text"`
+	Tags      []string `json:"tags"`
+	UpdatedAt string   `json:"updatedAt"`
+}
 type Post struct {
-	ID          string    `json:"id"`
-	AuthorID    string    `json:"authorId"`
-	Book        Book      `json:"book"`
-	Status      string    `json:"status"`
-	Progress    *int      `json:"progress,omitempty"`
-	Rating      *int      `json:"rating,omitempty"`
-	Thoughts    string    `json:"thoughts"`
-	CreatedAt   string    `json:"createdAt"`
-	LikedBy     []string  `json:"likedBy"`
-	Comments    []Comment `json:"comments"`
-	ShelfBookID string    `json:"shelfBookId,omitempty"`
+	ID        string    `json:"id"`
+	AuthorID  string    `json:"authorId"`
+	Book      Book      `json:"book"`
+	Status    string    `json:"status"`
+	Progress  *int      `json:"progress,omitempty"`
+	Rating    *int      `json:"rating,omitempty"`
+	Thoughts  string    `json:"thoughts"`
+	CreatedAt string    `json:"createdAt"`
+	LikedBy   []string  `json:"likedBy"`
+	Comments  []Comment `json:"comments"`
+	// Notes are the author's public notes on this book, on their latest post about it.
+	Notes       []PublicNote `json:"notes"`
+	ShelfBookID string       `json:"shelfBookId,omitempty"`
 	// Started and Finished are the author's reading months for the book.
 	Started  string `json:"started,omitempty"`
 	Finished string `json:"finished,omitempty"`
@@ -102,6 +112,7 @@ type Note struct {
 	BookID    string   `json:"bookId,omitempty"`
 	Text      string   `json:"text"`
 	Tags      []string `json:"tags"`
+	Public    bool     `json:"public"`
 	CreatedAt string   `json:"createdAt"`
 	UpdatedAt string   `json:"updatedAt"`
 }
@@ -212,7 +223,7 @@ func load(app core.App, u *core.Record) (*State, error) {
 		postIDs[i] = p.Id
 		index[p.Id] = i
 		view := Post{ID: p.Id, AuthorID: p.GetString("owner"), Book: decodeBook(p), Status: p.GetString("status"), Thoughts: p.GetString("thoughts"),
-			CreatedAt: stamp(p, "created"), LikedBy: []string{}, Comments: []Comment{}, ShelfBookID: p.GetString("shelfBook")}
+			CreatedAt: stamp(p, "created"), LikedBy: []string{}, Comments: []Comment{}, Notes: []PublicNote{}, ShelfBookID: p.GetString("shelfBook")}
 		if view.Status == "reading" {
 			progress := p.GetInt("progress")
 			view.Progress = &progress
@@ -258,6 +269,34 @@ func load(app core.App, u *core.Record) (*State, error) {
 			p := &s.Posts[index[c.GetString("post")]]
 			p.Comments = append(p.Comments, Comment{c.Id, c.GetString("user"), c.GetString("text"), stamp(c, "created")})
 			people[c.GetString("user")] = true
+		}
+
+		// Public notes go on the newest post about each shelf book.
+		latest := map[string]int{}
+		for i := len(s.Posts) - 1; i >= 0; i-- {
+			if id := s.Posts[i].ShelfBookID; id != "" {
+				latest[id] = i
+			}
+		}
+		if len(latest) > 0 {
+			ids := make([]string, 0, len(latest))
+			for id := range latest {
+				ids = append(ids, id)
+			}
+			public, err := app.FindAllRecords("notes", dbx.In("book", anyIDs(ids)...), dbx.HashExp{"public": true})
+			if err != nil {
+				return nil, err
+			}
+			sort.Slice(public, func(i, j int) bool { return stamp(public[i], "updated") > stamp(public[j], "updated") })
+			for _, n := range public {
+				p := &s.Posts[latest[n.GetString("book")]]
+				if n.GetString("owner") != p.AuthorID {
+					continue
+				}
+				tags := []string{}
+				_ = n.UnmarshalJSONField("tags", &tags)
+				p.Notes = append(p.Notes, PublicNote{n.Id, n.GetString("text"), tags, stamp(n, "updated")})
+			}
 		}
 	}
 
@@ -329,7 +368,7 @@ func load(app core.App, u *core.Record) (*State, error) {
 	for _, r := range notes {
 		tags := []string{}
 		_ = r.UnmarshalJSONField("tags", &tags)
-		s.Notes = append(s.Notes, Note{r.Id, r.GetString("book"), r.GetString("text"), tags, stamp(r, "created"), stamp(r, "updated")})
+		s.Notes = append(s.Notes, Note{r.Id, r.GetString("book"), r.GetString("text"), tags, r.GetBool("public"), stamp(r, "created"), stamp(r, "updated")})
 	}
 	sort.Slice(s.Notes, func(i, j int) bool { return s.Notes[i].UpdatedAt > s.Notes[j].UpdatedAt })
 

@@ -861,3 +861,51 @@ func TestUpdatingProgressChangesPostsInPlace(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicNotesShowOnLatestPostAboutTheBook(t *testing.T) {
+	app := testApp(t)
+	maya := testUser(t, app, "maya@example.com", true)
+	theo := testUser(t, app, "theo@example.com", true)
+	stranger := testUser(t, app, "sam@example.com", true)
+	befriend(t, app, maya, theo)
+	call(t, app, maya, "post", Input{Book: book("Dune"), Status: "reading", Progress: intp(10)})
+	s := call(t, app, maya, "post", Input{Book: book("Dune"), Status: "finished", Rating: intp(5)})
+	bookID := s.Shelf[0].ID
+	call(t, app, maya, "note-save", Input{BookID: bookID, Text: "Private thought"})
+	s = call(t, app, maya, "note-save", Input{BookID: bookID, Text: "Fear is the mind-killer", Tags: []string{"quotes"}, Public: true})
+	if s = call(t, app, maya, "note-save", Input{Text: "Not about a book", Public: true}); s.Notes[0].Public {
+		t.Fatal("a note without a book was made public")
+	}
+	// Theo cannot attach a public note to Maya's post.
+	call(t, app, theo, "note-save", Input{Text: "x", Public: true})
+
+	ts := call(t, app, theo, "state", Input{})
+	if len(ts.Notes) != 1 || len(ts.Posts) != 2 {
+		t.Fatal("unexpected state for friend", ts.Notes, ts.Posts)
+	}
+	latest, earlier := ts.Posts[0], ts.Posts[1]
+	if latest.Status != "finished" || len(latest.Notes) != 1 || latest.Notes[0].Text != "Fear is the mind-killer" ||
+		latest.Notes[0].Tags[0] != "quotes" || len(earlier.Notes) != 0 {
+		t.Fatal("public note should show once, on the latest post", latest.Notes, earlier.Notes)
+	}
+	if ss := call(t, app, stranger, "state", Input{}); len(ss.Posts) != 0 {
+		t.Fatal("posts leaked to a stranger")
+	}
+
+	// Making it private again, or removing the book, hides it.
+	noteID := latest.Notes[0].ID
+	call(t, app, maya, "note-save", Input{ID: noteID, BookID: bookID, Text: "Fear is the mind-killer"})
+	if ts = call(t, app, theo, "state", Input{}); len(ts.Posts[0].Notes) != 0 {
+		t.Fatal("private note still shown")
+	}
+	call(t, app, maya, "note-save", Input{ID: noteID, BookID: bookID, Text: "Fear is the mind-killer", Public: true})
+	s = call(t, app, maya, "shelf-remove", Input{ID: bookID})
+	for _, n := range s.Notes {
+		if n.Public {
+			t.Fatal("unlinked note stayed public")
+		}
+	}
+	if ts = call(t, app, theo, "state", Input{}); len(ts.Posts[0].Notes) != 0 {
+		t.Fatal("note still shown after its book was removed")
+	}
+}

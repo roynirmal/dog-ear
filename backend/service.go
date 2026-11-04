@@ -65,6 +65,7 @@ type Input struct {
 	CanLend   bool     `json:"canLend"`
 	Text      string   `json:"text"`
 	Tags      []string `json:"tags"`
+	Public    bool     `json:"public"`
 	Direction string   `json:"direction"`
 	Friend    string   `json:"friend"`
 	Contact   string   `json:"contact"`
@@ -692,13 +693,15 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		if err != nil {
 			return err
 		}
-		// Notes outlive the shelf entry; they simply lose their book link.
+		// Notes outlive the shelf entry; they lose their book link and, with it,
+		// the post they were shown on.
 		notes, err := app.FindAllRecords("notes", dbx.HashExp{"owner": uid, "book": r.Id})
 		if err != nil {
 			return err
 		}
 		for _, n := range notes {
 			n.Set("book", "")
+			n.Set("public", false)
 			if err := app.Save(n); err != nil {
 				return err
 			}
@@ -737,6 +740,8 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		r.Set("text", text)
 		r.Set("tags", tags)
 		r.Set("book", bookID)
+		// Only notes about a book can be public; they show on its posts.
+		r.Set("public", in.Public && bookID != "")
 		return app.Save(r)
 
 	case "note-delete":

@@ -14,6 +14,7 @@ import {
   Share,
   Trash2,
   TrendingUp,
+  Users,
 } from 'lucide-react'
 import { shelfStatusOptions } from '@/components/add-book-dialog'
 import { BookCover } from '@/components/book-cover'
@@ -347,6 +348,12 @@ function NotesSection({ onNote }: { onNote: (options: { note?: Note }) => void }
                 #{t}
               </span>
             ))}
+            {note.public && note.bookId ? (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Users aria-hidden="true" className="size-3.5" />
+                Shared with friends
+              </span>
+            ) : null}
             <span className="ml-auto text-xs text-muted-foreground">{relativeTime(note.updatedAt)}</span>
           </span>
         </button>
