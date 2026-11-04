@@ -868,8 +868,13 @@ func TestPublicNotesShowOnLatestPostAboutTheBook(t *testing.T) {
 	theo := testUser(t, app, "theo@example.com", true)
 	stranger := testUser(t, app, "sam@example.com", true)
 	befriend(t, app, maya, theo)
-	call(t, app, maya, "post", Input{Book: book("Dune"), Status: "reading", Progress: intp(10)})
-	s := call(t, app, maya, "post", Input{Book: book("Dune"), Status: "finished", Rating: intp(5)})
+	s := call(t, app, maya, "post", Input{Book: book("Dune"), Status: "reading", Progress: intp(10)})
+	// Make the finished post land after the reading one, as it would in real use.
+	if _, err := app.DB().NewQuery("UPDATE posts SET created = '2026-01-01 00:00:00.000Z' WHERE id = {:id}").
+		Bind(dbx.Params{"id": s.Posts[0].ID}).Execute(); err != nil {
+		t.Fatal(err)
+	}
+	s = call(t, app, maya, "post", Input{Book: book("Dune"), Status: "finished", Rating: intp(5)})
 	bookID := s.Shelf[0].ID
 	call(t, app, maya, "note-save", Input{BookID: bookID, Text: "Private thought"})
 	s = call(t, app, maya, "note-save", Input{BookID: bookID, Text: "Fear is the mind-killer", Tags: []string{"quotes"}, Public: true})
