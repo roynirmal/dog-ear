@@ -999,4 +999,20 @@ func TestSharingTheSameReadAgainUpdatesThePost(t *testing.T) {
 	if len(s.Posts) != 2 {
 		t.Fatal("starting a re-read should add a post", s.Posts)
 	}
+
+	// Changing progress through the share dialog updates the reading post too.
+	s = call(t, app, maya, "post", Input{Book: book("Dune"), Status: "reading", Progress: intp(40)})
+	if len(s.Posts) != 2 || s.Posts[0].Status != "reading" || *s.Posts[0].Progress != 40 || s.Shelf[0].Progress != 40 {
+		t.Fatal("editing progress should not add a post", s.Posts)
+	}
+	ts := call(t, app, theo, "state", Input{})
+	shown := 0
+	for _, p := range ts.Posts {
+		if !p.Ended {
+			shown++
+		}
+	}
+	if len(ts.Posts) != 2 || shown != 2 {
+		t.Fatal("friends should see one reading and one finished post", ts.Posts)
+	}
 }
