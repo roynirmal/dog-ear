@@ -914,3 +914,105 @@ func TestPublicNotesShowOnLatestPostAboutTheBook(t *testing.T) {
 		t.Fatal("note still shown after its book was removed")
 	}
 }
+
+func TestReadingPostsEndWhenTheReadIsOver(t *testing.T) {
+	app := testApp(t)
+	maya := testUser(t, app, "maya@example.com", true)
+	theo := testUser(t, app, "theo@example.com", true)
+	befriend(t, app, maya, theo)
+	backdate := func(postID, at string) {
+		t.Helper()
+		if _, err := app.DB().NewQuery("UPDATE posts SET created = {:at} WHERE id = {:id}").
+			Bind(dbx.Params{"id": postID, "at": at}).Execute(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ended := func() map[string]bool {
+		t.Helper()
+		out := map[string]bool{}
+		for _, p := range call(t, app, theo, "state", Input{}).Posts {
+			out[p.ID] = p.Ended
+		}
+		return out
+	}
+
+	// Posting "finished" ends the earlier reading post.
+	s := call(t, app, maya, "post", Input{Book: book("Dune"), Status: "reading", Progress: intp(10)})
+	duneReading := s.Posts[0].ID
+	backdate(duneReading, "2026-01-01 00:00:00.000Z")
+	if ended()[duneReading] {
+		t.Fatal("a current read should not be ended")
+	}
+	s = call(t, app, maya, "post", Input{Book: book("Dune"), Status: "finished", Rating: intp(4)})
+	duneFinished, duneID := s.Posts[0].ID, s.Shelf[0].ID
+	backdate(duneFinished, "2026-02-01 00:00:00.000Z")
+	if e := ended(); !e[duneReading] || e[duneFinished] {
+		t.Fatal("finishing should end only the reading post", e)
+	}
+
+	// Re-reading: the new reading post is current, the old ones stay ended.
+	s = call(t, app, maya, "post", Input{Book: book("Dune"), Status: "reading", Progress: intp(0)})
+	reread := s.Posts[0].ID
+	if e := ended(); e[reread] || !e[duneReading] || e[duneFinished] {
+		t.Fatal("a re-read should be current", e)
+	}
+
+	// Moving a book off "reading" without posting, or removing it, ends the read too.
+	s = call(t, app, maya, "post", Input{Book: book("Emma"), Status: "reading", Progress: intp(5)})
+	emma := s.Posts[0].ID
+	var emmaID string
+	for _, b := range s.Shelf {
+		if b.Title == "Emma" {
+			emmaID = b.ID
+		}
+	}
+	call(t, app, maya, "shelf-update", Input{ID: emmaID, Status: "finished"})
+	call(t, app, maya, "shelf-remove", Input{ID: duneID})
+	if e := ended(); !e[emma] || !e[reread] {
+		t.Fatal("shelving or removing a book should end its read", e)
+	}
+}
+
+func TestSharingTheSameReadAgainUpdatesThePost(t *testing.T) {
+	app := testApp(t)
+	maya := testUser(t, app, "maya@example.com", true)
+	theo := testUser(t, app, "theo@example.com", true)
+	befriend(t, app, maya, theo)
+	s := call(t, app, maya, "post", Input{Book: book("Dune"), Status: "finished", Thoughts: "Loved the desert."})
+	postID := s.Posts[0].ID
+	call(t, app, theo, "comment", Input{ID: postID, Text: "Same!"})
+	call(t, app, theo, "like", Input{ID: postID})
+
+	// Adding stars later (the dialog sends the thoughts it prefilled) keeps one post.
+	s = call(t, app, maya, "post", Input{Book: book("Dune"), Status: "finished", Rating: intp(5), Thoughts: "Loved the desert."})
+	if len(s.Posts) != 1 || s.Posts[0].ID != postID || *s.Posts[0].Rating != 5 || s.Posts[0].Thoughts != "Loved the desert." ||
+		len(s.Posts[0].Comments) != 1 || len(s.Posts[0].LikedBy) != 1 {
+		t.Fatal("sharing the same read again should update the post", s.Posts)
+	}
+	s = call(t, app, maya, "post", Input{Book: book("Dune"), Status: "finished", Thoughts: "Changed my mind."})
+	if len(s.Posts) != 1 || s.Posts[0].Rating != nil || s.Posts[0].Thoughts != "Changed my mind." {
+		t.Fatal("an update should replace thoughts and stars", s.Posts)
+	}
+
+	// A different status is a new post, as is the next read after that.
+	s = call(t, app, maya, "post", Input{Book: book("Dune"), Status: "reading", Progress: intp(0)})
+	if len(s.Posts) != 2 {
+		t.Fatal("starting a re-read should add a post", s.Posts)
+	}
+
+	// Changing progress through the share dialog updates the reading post too.
+	s = call(t, app, maya, "post", Input{Book: book("Dune"), Status: "reading", Progress: intp(40)})
+	if len(s.Posts) != 2 || s.Posts[0].Status != "reading" || *s.Posts[0].Progress != 40 || s.Shelf[0].Progress != 40 {
+		t.Fatal("editing progress should not add a post", s.Posts)
+	}
+	ts := call(t, app, theo, "state", Input{})
+	shown := 0
+	for _, p := range ts.Posts {
+		if !p.Ended {
+			shown++
+		}
+	}
+	if len(ts.Posts) != 2 || shown != 2 {
+		t.Fatal("friends should see one reading and one finished post", ts.Posts)
+	}
+}

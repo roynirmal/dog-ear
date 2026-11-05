@@ -48,6 +48,8 @@ export type Post = {
   finished?: string
   /** When the author last updated progress, if after posting; `progress` is then current. */
   progressAt?: string
+  /** A reading post whose read is over (finished, re-posted, or shelved); the feed hides it. */
+  ended?: boolean
   /** Live: the author's copy is lendable and not on loan right now. */
   canLend: boolean
   lentOut: boolean
