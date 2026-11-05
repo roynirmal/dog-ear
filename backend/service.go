@@ -760,9 +760,28 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		if err != nil {
 			return err
 		}
-		r, err := newRecord(app, "posts")
+		// Posting again about the same read (the book is already on this status
+		// and your latest post about it says so) updates that post, keeping its
+		// hearts and comments, instead of adding a second one.
+		var r *core.Record
+		prior, err := findShelf(app, uid, b)
 		if err != nil {
 			return err
+		}
+		if prior != nil && prior.GetString("status") == in.Status {
+			latest, err := app.FindRecordsByFilter("posts", "owner = {:u} && shelfBook = {:b}", "-created", 1, 0,
+				dbx.Params{"u": uid, "b": prior.Id})
+			if err != nil {
+				return err
+			}
+			if len(latest) == 1 && latest[0].GetString("status") == in.Status {
+				r = latest[0]
+			}
+		}
+		if r == nil {
+			if r, err = newRecord(app, "posts"); err != nil {
+				return err
+			}
 		}
 		switch in.Status {
 		case "reading":
@@ -776,6 +795,8 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 					return errors.New("rating must be between 1 and 5")
 				}
 				r.Set("rating", *in.Rating)
+			} else {
+				r.Set("rating", 0)
 			}
 		default:
 			return errors.New("invalid reading status")

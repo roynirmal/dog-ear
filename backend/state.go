@@ -47,6 +47,9 @@ type Post struct {
 	// ProgressAt is when the author last updated progress on this read, when
 	// that happened after the post (the post then shows their current progress).
 	ProgressAt string `json:"progressAt,omitempty"`
+	// Ended marks a reading post whose read is over: the author posted again
+	// about the book, moved it off "reading", or took it off their shelf.
+	Ended bool `json:"ended,omitempty"`
 	// CanLend is live: the author's copy is lendable and not on loan.
 	CanLend   bool `json:"canLend"`
 	LentOut   bool `json:"lentOut"`
@@ -219,6 +222,7 @@ func load(app core.App, u *core.Record) (*State, error) {
 
 	postIDs := make([]string, len(posts))
 	index := map[string]int{}
+	posted := map[string]bool{} // shelf books with a newer post, as posts run newest first
 	for i, p := range posts {
 		postIDs[i] = p.Id
 		index[p.Id] = i
@@ -240,6 +244,13 @@ func load(app core.App, u *core.Record) (*State, error) {
 					view.ProgressAt = at
 				}
 			}
+		}
+		if view.Status == "reading" && view.ShelfBookID != "" {
+			b := books[view.ShelfBookID]
+			view.Ended = posted[view.ShelfBookID] || b == nil || b.GetString("status") != "reading"
+		}
+		if view.ShelfBookID != "" {
+			posted[view.ShelfBookID] = true
 		}
 		if b := books[view.ShelfBookID]; b != nil && b.GetBool("lendable") {
 			view.LentOut = onLoan[b.Id]

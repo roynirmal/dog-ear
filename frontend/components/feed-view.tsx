@@ -21,8 +21,8 @@ export function FeedView({ onShare, onInvite }: { onShare: () => void; onInvite:
   const { posts, me, friends, person } = useLibrary()
   const [filter, setFilter] = useState<Filter>('all')
 
-  // Your own posts live on the You tab.
-  const friendPosts = posts.filter((post) => post.authorId !== me.id)
+  // Your own posts live on the You tab; reads that are over leave the feed.
+  const friendPosts = posts.filter((post) => post.authorId !== me.id && !post.ended)
   const currentlyReading = friendPosts.filter(
     (post, index, all) =>
       post.status === 'reading' &&

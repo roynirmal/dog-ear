@@ -65,6 +65,11 @@ reading post shows the live progress of its shelf book while that book is still
 being read, plus `progressAt` when it was updated after the post. Starting or
 re-reading a book resets progress to 0.
 
+A reading post is `ended` once that read is over: the author posts again about the
+same shelf book (for example "finished"), moves it off "reading", or removes it
+from their shelf. The feed, its "Reading now" filter and the nightstands row hide
+ended posts; the author still sees them on their own profile.
+
 ### Notifications
 
 The only notification: when a friend posts that they are reading a book, each of
@@ -94,7 +99,7 @@ on-focus refresh picks up friends' changes.
 | `shelf-remove` | `id` | Owner only; unlinks notes (making them private), drops pending borrow requests |
 | `note-save` | `id?, bookId?, text, tags[], public?` | Owner only; `bookId` must be your shelf book; only notes with a book can be public |
 | `note-delete` | `id` | Owner only |
-| `post` | `book, status, progress/rating, thoughts, canLend, started?, finished?` | Upserts the shelf entry and its `lendable`; a reading post notifies friends once per book |
+| `post` | `book, status, progress/rating, thoughts, canLend, started?, finished?` | Upserts the shelf entry and its `lendable`; posting the same read again (shelf book already on that status, your latest post about it too) replaces that post's rating and thoughts instead of adding one; a reading post notifies friends once per book |
 | `post-delete` | `id` | Author only; removes likes, comments, its notifications |
 | `like` (toggle), `comment` | `id[, text]` | Post must be yours or a current friend's |
 | `request` | `id` (shelf book) | A friend's lendable copy that is not lent out; one pending request per person |

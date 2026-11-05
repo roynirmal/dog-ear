@@ -26,7 +26,7 @@ export function ShareDialog({
   onOpenChange: (open: boolean) => void
   onShared: () => void
 }) {
-  const { addPost, shelf } = useLibrary()
+  const { addPost, shelf, posts, me } = useLibrary()
   const [book, setBook] = useState<Book | null>(null)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<ReadingStatus>('reading')
@@ -44,6 +44,9 @@ export function ShareDialog({
           : b.title.toLowerCase() === book.title.toLowerCase() && b.author.toLowerCase() === book.author.toLowerCase(),
       )
     : undefined
+  // Sharing the same read again updates this post rather than adding one.
+  const latestPost = copy && posts.find((p) => p.authorId === me.id && p.shelfBookId === copy.id)
+  const updating = !!latestPost && copy?.status === status && latestPost.status === status
 
   // Start from the shelf copy's lending setting when the book is already there.
   useEffect(() => {
@@ -61,6 +64,11 @@ export function ShareDialog({
     } else {
       setStarted(copy?.started ?? '')
       setFinished((copy?.status === 'finished' && copy.finished) || thisMonth())
+    }
+    // Start from what that post already says, so adding stars keeps your thoughts.
+    if (updating && latestPost) {
+      setThoughts(latestPost.thoughts)
+      setRating(latestPost.rating ?? 0)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [book, status])
@@ -202,7 +210,7 @@ export function ShareDialog({
             className="h-12 rounded-full text-base"
             disabled={!book || busy || !monthsValid(status, started, finished)}
           >
-            {busy ? 'Sharing…' : 'Share with friends'}
+            {busy ? 'Sharing…' : updating ? 'Update your post' : 'Share with friends'}
           </Button>
         </form>
       </DialogContent>
