@@ -1,5 +1,5 @@
 import PocketBase from 'pocketbase'
-import type { Book, LibraryState } from '@/lib/data'
+import type { Book, LibraryState, ScanResult } from '@/lib/data'
 
 // In production PocketBase serves this app, so the API is same-origin. During
 // `next dev` the backend runs on its own port (see NEXT_PUBLIC_PB_URL).
@@ -35,6 +35,23 @@ export function api(action: string, body: Record<string, unknown> = {}) {
 
 export function searchBooks(query: string, signal?: AbortSignal) {
   return request<Book[]>(`/api/dogear/search?q=${encodeURIComponent(query)}`, { signal })
+}
+
+/** Uploads a shelf photo for recognition. The image is not stored. */
+export async function scanShelf(file: File, signal?: AbortSignal): Promise<ScanResult> {
+  const token = pb.authStore.token
+  const body = new FormData()
+  body.append('image', file)
+  const response = await fetch(`${baseUrl}/api/dogear/shelf-scan`, {
+    method: 'POST',
+    headers: { Authorization: token },
+    body,
+    signal,
+  })
+  if (response.status === 401 && pb.authStore.token === token) pb.authStore.clear()
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(data.message || 'The shelf scan failed. Please try again.')
+  return data as ScanResult
 }
 
 export type FoundPerson = {

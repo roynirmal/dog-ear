@@ -6,7 +6,7 @@
   served by PocketBase from `backend/pb_public`. All data loading is client-side
   through the PocketBase JS SDK (auth) and `fetch` (domain API).
 - PocketBase extended in Go: Google OAuth, SQLite, migrations and custom routes.
-- No other services. Open Library is called from Go only.
+- No other services. Open Library, Google Books and Gemini are called from Go only.
 
 ## Storage
 
@@ -30,6 +30,7 @@ loans        lender, borrower (user IDs; one may be ""), contact (name of a pers
              outside the app), book{...}, shelfBook (lender's copy, if linked),
              createdBy, since, due (YYYY-MM-DD), returned, nudged
 notifications  user, actor, post, bookKey, read; unique (user, actor, bookKey)
+scan_usage   owner, day (YYYY-MM-DD, UTC), scans; unique (owner, day) — daily shelf-scan quota
 ```
 
 Posts and loans copy the book details instead of relying on a shelf row, so
@@ -95,6 +96,7 @@ on-focus refresh picks up friends' changes.
 | `friend-request` | `id` (user) or `email` | By `id`, requires a mutual friend; by exact `email`, no mutual friend needed. Asking someone who asked you accepts; repeats and declined requests are quiet no-ops |
 | `friend-respond` | `id, accept` | Recipient only |
 | `shelf-add` | `book, status, lendable?, started?, finished?` | Upserts by Open Library key or case-insensitive title+author |
+| `shelf-add-many` | `books[], status` | Up to 100 reviewed books from a shelf photo; upserts each one |
 | `shelf-update` | `id, status?, lendable?, started?, finished?` | Owner only |
 | `shelf-remove` | `id` | Owner only; unlinks notes (making them private), drops pending borrow requests |
 | `note-save` | `id?, bookId?, text, tags[], public?` | Owner only; `bookId` must be your shelf book; only notes with a book can be public |
@@ -127,6 +129,16 @@ case-insensitive email and returns only `{id, name, relation}` (self, friend, se
 incoming, none), or 404.
 `GET /api/dogear/config` is public and reports only whether Google sign-in is set up.
 
+`POST /api/dogear/shelf-scan` (authenticated, multipart `image` up to 12 MB) reads
+book spines from a shelf photo. The server downscales the photo, sends four
+overlapping crops to Gemini (default `gemini-3.1-flash-lite`, `GEMINI_MODEL`
+overrides), maps boxes back to the full image, drops overlaps, and enriches each
+readable title with a Google Books candidate. It returns candidates for review;
+nothing is saved until the client calls `shelf-add-many`. Without
+`GEMINI_API_KEY` the route returns 503. The photo is not written to disk. Each
+user gets 10 scans per UTC day; the reservation is taken before inference and
+refunded if the scan fails, so failed attempts do not use up the quota.
+
 Unknown JSON fields are rejected; bodies are limited to 64 KiB. Text limits: title
 300, author 200, thoughts 5,000, comment 1,000, note 10,000 characters; up to 10 tags
 of 32 characters, normalized to lowercase-hyphenated.
@@ -142,6 +154,10 @@ of 32 characters, normalized to lowercase-hyphenated.
   that post can read it. With no post about the book, nobody else sees it. Of your shelf, friends see only lendable books (and whether
   they are lent out); the rest is private.
 - A loan is visible to its lender and borrower. Unfriending does not hide it.
+- A shelf photo is processed only when the reader starts a scan: the image is
+  sent to Google Gemini for spine recognition and is not kept by Dog-ear. Only
+  the extracted title/author text is sent to Google Books for matching. The
+  result stays in the browser until the reader confirms which books to add.
 - Invite links are bearer links: anyone with the link who signs in becomes your
   friend. There is no code rotation yet.
 

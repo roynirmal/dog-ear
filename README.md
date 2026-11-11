@@ -95,6 +95,21 @@ titles Open Library lacks. Without a key it shares Google's small anonymous quot
 for reliable results create an API key in your Google Cloud project with the Books
 API enabled and export `GOOGLE_BOOKS_API_KEY` before starting the backend.
 
+## Optional: shelf photo scanning
+
+The **Add to your shelf → Scan shelf** option photographs a shelf and reads the
+book spines with Google Gemini. Export `GEMINI_API_KEY` before starting the
+backend. The default model is `gemini-3.1-flash-lite`; override it with
+`GEMINI_MODEL`. Scanning is unavailable (and the option reports so) without a
+key.
+
+The photo is sent to Gemini in four crops and is not stored by Dog-ear. Only the
+extracted title/author text is sent to Google Books for matching. Each scan
+costs roughly one to two cents at standard Gemini paid rates, and each user is
+limited to 10 shelf photos per UTC day. The cropped request shape and measured
+costs are documented in
+[`experiments/gemini-bookshelf-trial`](experiments/gemini-bookshelf-trial/README.md).
+
 ## Test
 
 ```sh
@@ -111,6 +126,7 @@ backend/schema*.go       Migrations: locked collections and users hardening
 backend/service.go       Every domain action, authorized inside one transaction
 backend/state.go         The per-user state every action returns
 backend/booksearch.go    Cached Open Library + Google Books search
+backend/shelfscan.go     Gemini shelf-photo recognition and Google matching
 backend/main.go          HTTP routes, Google-only OAuth hook, static frontend
 frontend/app/            Next.js entry, layout, manifest
 frontend/components/     Views, dialogs and the LibraryProvider (server state)

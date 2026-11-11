@@ -12,6 +12,27 @@ export type Book = {
   year?: number
 }
 
+/** A book read from a shelf photo, before the reader confirms it. */
+export type ScannedBook = Book & {
+  /** Text the model read, kept so a corrected title can be compared. */
+  rawTitle: string
+  rawAuthor: string
+  confidence: 'high' | 'medium' | 'low'
+  /** [ymin, xmin, ymax, xmax] normalized to the full photo. */
+  bbox: [number, number, number, number]
+  /** A Google Books candidate was found and copied into the book fields. */
+  matched: boolean
+}
+
+export type ScanResult = {
+  books: ScannedBook[]
+  unreadable: number
+  model: string
+  /** Shelf scans remaining for this user today, after this one. */
+  scansLeft: number
+  warning?: string
+}
+
 export type Person = {
   id: string
   name: string
@@ -166,6 +187,11 @@ export const shelfStatusLabels: Record<ShelfStatus, string> = {
   reading: 'Reading',
   finished: 'Finished',
 }
+
+export const shelfStatusOptions = (Object.keys(shelfStatusLabels) as ShelfStatus[]).map((value) => ({
+  value,
+  label: shelfStatusLabels[value],
+}))
 
 function hash(text: string) {
   let h = 0

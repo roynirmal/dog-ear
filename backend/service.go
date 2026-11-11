@@ -55,6 +55,7 @@ type Input struct {
 	Code      string   `json:"code"`
 	Email     string   `json:"email"`
 	Book      *Book    `json:"book"`
+	Books     []Book   `json:"books"`
 	Status    string   `json:"status"`
 	Lendable  *bool    `json:"lendable"`
 	Started   *string  `json:"started"`  // YYYY-MM; "" clears, absent keeps
@@ -666,6 +667,24 @@ func mutate(app core.App, u *core.Record, action string, in Input) error {
 		}
 		_, err = upsertShelf(app, uid, b, in.Status, in.Lendable, in.Started, in.Finished, false)
 		return err
+
+	case "shelf-add-many":
+		if len(in.Books) == 0 {
+			return errors.New("no books to add")
+		}
+		if len(in.Books) > 100 {
+			return errors.New("too many books at once")
+		}
+		for i := range in.Books {
+			b, err := cleanBook(&in.Books[i])
+			if err != nil {
+				return err
+			}
+			if _, err := upsertShelf(app, uid, b, in.Status, in.Lendable, in.Started, in.Finished, false); err != nil {
+				return err
+			}
+		}
+		return nil
 
 	case "shelf-update":
 		r, err := owned(app, "books", "owner", uid, in.ID)

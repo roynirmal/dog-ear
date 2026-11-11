@@ -63,6 +63,8 @@ type LibraryContextValue = LibraryState & {
   nudge: (loanId: string) => Promise<void>
   deleteLoan: (loanId: string) => Promise<void>
   addToShelf: (book: Book, status: ShelfStatus, months?: ReadingMonths) => Promise<void>
+  /** Adds a reviewed batch from a shelf photo; duplicates are merged server-side. */
+  addManyToShelf: (books: Book[], status: ShelfStatus) => Promise<void>
   setShelfStatus: (bookId: string, status: ShelfStatus) => Promise<void>
   setLendable: (bookId: string, lendable: boolean) => Promise<void>
   setReadingMonths: (bookId: string, months: ReadingMonths) => Promise<void>
@@ -144,6 +146,7 @@ export function LibraryProvider({
       nudge: (id) => run('nudge', { id }),
       deleteLoan: (id) => run('loan-delete', { id }),
       addToShelf: (book, status, months) => run('shelf-add', { book: toBook(book), status, ...months }),
+      addManyToShelf: (books, status) => run('shelf-add-many', { books: books.map(toBook), status }),
       setShelfStatus: (id, status) => run('shelf-update', { id, status }),
       setLendable: (id, lendable) => run('shelf-update', { id, lendable }),
       setReadingMonths: (id, months) => run('shelf-update', { id, ...months }),

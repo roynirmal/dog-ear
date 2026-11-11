@@ -16,7 +16,7 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react'
-import { shelfStatusOptions } from '@/components/add-book-dialog'
+import { shelfStatusOptions } from '@/lib/data'
 import { BookCover } from '@/components/book-cover'
 import { FilterChips } from '@/components/filter-chips'
 import { FriendAvatar } from '@/components/friend-avatar'

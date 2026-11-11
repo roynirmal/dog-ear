@@ -105,6 +105,7 @@ func register(app core.App) {
 			}
 			return e.JSON(200, found)
 		}).Bind(apis.RequireAuth("users"))
+		se.Router.POST("/api/dogear/shelf-scan", shelfScanHandler).Bind(apis.RequireAuth("users"))
 		se.Router.POST("/api/dogear/{action}", func(e *core.RequestEvent) error {
 			var in Input
 			if err := readBody(e, &in, 64*1024); err != nil {
